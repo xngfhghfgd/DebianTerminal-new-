@@ -41,7 +41,7 @@ final class AppState: ObservableObject {
                 self!.writeHandle = inStream
                 // 读串口输出
                 let outTask = Task {
-                    for await line in outStream.lines {
+                    for await line in outStream {
                         await MainActor.run {
                             self?.terminalLog += line + "\n"
                         }
