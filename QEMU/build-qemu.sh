@@ -33,9 +33,13 @@ rm -rf "$VENV"
 export PYTHON="$VENV/bin/python"
 
 # 让 QEMU 使用已装好依赖的解释器（--python 指向它，避免重建隔离 venv）
+# 关键：cross-compile 时 QEMU meson 会尝试编译并运行测试可执行文件来探测
+# 工具链特性，但 iOS 目标的可执行文件在 macOS runner 上不可运行。
+# 通过 --cross-prefix + 静态构建方式 + 关闭编译测试特性规避。
 echo "### QEMU configure（iOS arm64 交叉编译）"
 CC="${CC_BIN} --sysroot=${SDK} --target=arm64-apple-ios17.0" \
 CXX="${CXX_BIN} --sysroot=${SDK} --target=arm64-apple-ios17.0" \
+OBJCC="${CC_BIN} --sysroot=${SDK} --target=arm64-apple-ios17.0" \
 ./configure \
   --python="$PYTHON" \
   --target-list=aarch64-softmmu \
@@ -49,6 +53,11 @@ CXX="${CXX_BIN} --sysroot=${SDK} --target=arm64-apple-ios17.0" \
   --disable-spice \
   --disable-pixman \
   --disable-slirp \
+  --disable-tests \
+  --disable-tools \
+  --disable-docs \
+  --disable-relocatable \
+  --cross-prefix=aarch64-apple-ios \
   --prefix="$OUT" \
   --extra-cflags="--target=arm64-apple-ios17.0 --sysroot=${SDK}" \
   --extra-cxxflags="--target=arm64-apple-ios17.0 --sysroot=${SDK}"
