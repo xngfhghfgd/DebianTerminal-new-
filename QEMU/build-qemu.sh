@@ -10,10 +10,10 @@
 #  - QEMU 9.x 将 glib 作为硬依赖。iOS 目标需要为 iOS 交叉编译 glib
 #    （静态库），并通过 pkg-config 指向它。
 #  - 策略（参考 UTM 的 build_dependencies.sh 思路）：
-#      1. 交叉编译 glib 为 iOS 静态库 + 生成 .pc 文件
+#      1. 交叉编译 zlib + libffi + glib 为 iOS 静态库 + 生成 .pc 文件
 #         （pcre2 子项目禁用 JIT：iOS 无 RWX 可执行内存，SLJIT JIT 不可用）
 #      2. ./configure --skip-meson（只生成 host 端配置）
-#      3. 手动生成 meson 交叉文件（can_run_host_bins=false）
+#      3. 手动生成 meson 交叉文件（can_run_host_bins=false + pkg-config 包装脚本）
 #      4. 手动 meson setup + ninja 完成构建
 set -euo pipefail
 
@@ -25,6 +25,7 @@ OUT="${OUT:-$PWD/build/qemu-ios}"
 GLIB_OUT="$PWD/build/glib-ios"
 CC_BIN="$(xcrun --find clang)"
 CXX_BIN="$(xcrun --find clang++)"
+IOS_TARGET="--target=arm64-apple-ios17.0 --sysroot=${SDK}"
 
 # 共用 Python venv（glib 与 QEMU 构建都用 meson/ninja）
 PY="$(brew --prefix)/opt/python@3.12/bin/python3.12"
@@ -36,7 +37,97 @@ MESON="$VENV/bin/meson"
 NINJA="$VENV/bin/ninja"
 export PYTHON="$VENV/bin/python"
 
-# ---------- Step 1: 交叉编译 glib for iOS ----------
+mkdir -p "$GLIB_OUT"
+IOS_PC_DIR="$GLIB_OUT/ios-pc"   # iOS 库的 .pc 文件集中目录
+
+# ---------- Step 1a: 交叉编译 zlib + libffi for iOS（glib 依赖） ----------
+echo "### 交叉编译 zlib + libffi for iOS arm64"
+ZLIB_SRC="${ZLIB_SRC:-zlib-src}"
+LIBFFI_SRC="${LIBFFI_SRC:-libffi-src}"
+LIBFFI_VERSION="${LIBFFI_VERSION:-3.4.7}"
+mkdir -p "$IOS_PC_DIR"
+
+# --- zlib (CMake) ---
+if [[ ! -d "$ZLIB_SRC" ]]; then
+  curl -sSL -o zlib.tar.gz "https://zlib.net/zlib-1.3.1.tar.gz"
+  tar xf zlib.tar.gz
+  rm zlib.tar.gz
+  mv zlib-1.3.1 "$ZLIB_SRC"
+fi
+cmake -S "$ZLIB_SRC" -B "$GLIB_OUT/zlib-build" -G Ninja \
+  -DCMAKE_SYSTEM_NAME=Darwin \
+  -DCMAKE_SYSTEM_PROCESSOR=arm64 \
+  -DCMAKE_OSX_ARCHITECTURES=arm64 \
+  -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0 \
+  -DCMAKE_OSX_SYSROOT="$SDK" \
+  -DCMAKE_C_FLAGS="$IOS_TARGET" \
+  -DCMAKE_CXX_FLAGS="$IOS_TARGET" \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DZLIB_STATIC=ON -DZLIB_ENABLE_TESTS=OFF -DMINIZIP=OFF
+cmake --build "$GLIB_OUT/zlib-build" -j"$(sysctl -n hw.ncpu)"
+cmake --install "$GLIB_OUT/zlib-build" --prefix "$GLIB_OUT/zlib-prefix"
+echo "### zlib for iOS 完成: $GLIB_OUT/zlib-prefix"
+
+# --- libffi (autoconf) ---
+if [[ ! -d "$LIBFFI_SRC" ]]; then
+  curl -sSL -o libffi.tar.gz "https://github.com/libffi/libffi/releases/download/v${LIBFFI_VERSION}/libffi-${LIBFFI_VERSION}.tar.gz"
+  tar xf libffi.tar.gz
+  rm libffi.tar.gz
+  mv "libffi-${LIBFFI_VERSION}" "$LIBFFI_SRC"
+fi
+mkdir -p "$GLIB_OUT/libffi-build"
+CC="$CC_BIN" CXX="$CXX_BIN" "$LIBFFI_SRC/configure" \
+  --host=aarch64-apple-ios \
+  --build=aarch64-apple-darwin \
+  --prefix="$GLIB_OUT/libffi-prefix" \
+  --disable-docs \
+  --enable-shared=no \
+  --enable-static \
+  CFLAGS="$IOS_TARGET" \
+  LDFLAGS="$IOS_TARGET" \
+  -C "$GLIB_OUT/libffi-build" >/dev/null || {
+  # 若 VPATH 构建不支持，退化为 in-tree
+  cd "$LIBFFI_SRC"
+  CC="$CC_BIN" CXX="$CXX_BIN" ./configure \
+    --host=aarch64-apple-ios \
+    --prefix="$GLIB_OUT/libffi-prefix" \
+    --disable-docs \
+    --enable-shared=no --enable-static \
+    CFLAGS="$IOS_TARGET" LDFLAGS="$IOS_TARGET"
+}
+make -C "$GLIB_OUT/libffi-build" -j"$(sysctl -n hw.ncpu)" 2>/dev/null || \
+  { cd "$LIBFFI_SRC" && make -j"$(sysctl -n hw.ncpu)"; }
+make -C "$GLIB_OUT/libffi-build" install 2>/dev/null || \
+  { cd "$LIBFFI_SRC" && make install; }
+echo "### libffi for iOS 完成: $GLIB_OUT/libffi-prefix"
+
+# 生成 zlib + libffi 的 .pc 文件（集中放入 iOS .pc 目录）
+cat > "$IOS_PC_DIR/zlib.pc" <<PC
+prefix=$GLIB_OUT/zlib-prefix
+exec_prefix=\${prefix}
+libdir=\${exec_prefix}/lib
+includedir=\${prefix}/include
+Name: zlib
+Description: zlib compression library (iOS cross)
+Version: 1.3.1
+Libs: -L\${libdir} -lz
+Cflags: -I\${includedir}
+PC
+cat > "$IOS_PC_DIR/libffi.pc" <<PC
+prefix=$GLIB_OUT/libffi-prefix
+exec_prefix=\${prefix}
+libdir=\${exec_prefix}/lib
+includedir=\${prefix}/include
+Name: libffi
+Description: libffi foreign-function interface (iOS cross)
+Version: ${LIBFFI_VERSION}
+Libs: -L\${libdir} -lffi
+Cflags: -I\${includedir}
+PC
+echo "### .pc 文件就绪: $IOS_PC_DIR"
+ls "$IOS_PC_DIR"
+
+# ---------- Step 1b: 交叉编译 glib for iOS ----------
 echo "### 交叉编译 glib $GLIB_VERSION for iOS arm64"
 if [[ ! -d "$GLIB_SRC" ]]; then
   curl -sSL -o glib.tar.xz "https://download.gnome.org/sources/glib/2.84/glib-${GLIB_VERSION}.tar.xz"
@@ -44,14 +135,22 @@ if [[ ! -d "$GLIB_SRC" ]]; then
   rm glib.tar.xz
   mv "glib-${GLIB_VERSION}" "$GLIB_SRC"
 fi
-mkdir -p "$GLIB_OUT"
-cd "$GLIB_SRC"
-# 为 glib 生成 meson 交叉文件（指向 iOS clang）
+# 为 glib 生成 meson 交叉文件（指向 iOS clang + pkg-config 找到 zlib/libffi）
+PKG_WRAPPER_GLIB="$GLIB_OUT/pkg-config-glib"
+cat > "$PKG_WRAPPER_GLIB" <<GW
+#!/bin/sh
+# 只搜索 iOS 库的 .pc（glib 构建期）
+export PKG_CONFIG_PATH="${IOS_PC_DIR}"
+exec pkg-config "\$@"
+GW
+chmod +x "$PKG_WRAPPER_GLIB"
+
 cat > "$GLIB_OUT/meson-ios-cross.txt" <<GLEOF
 [binaries]
 c = ['${CC_BIN}', '--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
 ar = ['ar']
 strip = ['strip']
+pkg_config = ['${PKG_WRAPPER_GLIB}']
 
 [built-in options]
 c_args = ['--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
@@ -81,19 +180,26 @@ GLEOF
 DESTDIR="" "$NINJA" -C "$GLIB_OUT/build" install || true
 GLIB_PC_DIR="$GLIB_OUT/prefix/lib/pkgconfig"
 echo "### glib for iOS 构建完成: $GLIB_OUT"
-ls -la "$GLIB_PC_DIR" | head -5 || true
+ls -la "$GLIB_PC_DIR" | head -8 || true
+
+# 合并 iOS .pc 目录：glib + gobject + gio + zlib + libffi
+COMBINED_PC="$GLIB_OUT/combined-pc"
+mkdir -p "$COMBINED_PC"
+cp -f "$GLIB_PC_DIR"/*.pc "$COMBINED_PC"/ 2>/dev/null || true
+cp -f "$IOS_PC_DIR"/*.pc "$COMBINED_PC"/ 2>/dev/null || true
+ls "$COMBINED_PC"
 
 # 让 pkg-config 找到 glib 的 .pc 文件（host 端 glib 会干扰，用包装脚本固化搜索路径）
-export PKG_CONFIG_PATH="$GLIB_PC_DIR"
+export PKG_CONFIG_PATH="$COMBINED_PC"
 export PKG_CONFIG_SYSROOT_DIR="$SDK"
 
-# 生成 pkg-config 包装脚本（固化 PKG_CONFIG_PATH，meson 交叉文件只接受可执行文件路径）
+# 生成 pkg-config 包装脚本（meson 交叉文件只接受可执行文件路径）
 PKG_WRAPPER="$GLIB_OUT/pkg-config-ios"
 cat > "$PKG_WRAPPER" <<WRAP
 #!/bin/sh
-# 仅搜索 iOS glib 的 .pc 文件（避免 host 端 glib 干扰）
-export PKG_CONFIG_PATH="${GLIB_PC_DIR}"
-exec pkg-config "$@"
+# 只搜索 iOS 库的 .pc（QEMU 构建期）
+export PKG_CONFIG_PATH="${COMBINED_PC}"
+exec pkg-config "\$@"
 WRAP
 chmod +x "$PKG_WRAPPER"
 echo "### pkg-config 包装脚本: $PKG_WRAPPER"
@@ -120,14 +226,14 @@ QEMU_CONFIGURE_ARGS=(
   --disable-docs
   --disable-guest-agent
   --cross-prefix=aarch64-apple-ios
-  --extra-cflags="--target=arm64-apple-ios17.0 --sysroot=${SDK}"
-  --extra-cxxflags="--target=arm64-apple-ios17.0 --sysroot=${SDK}"
-  --extra-ldflags="--target=arm64-apple-ios17.0 --sysroot=${SDK} -L${GLIB_PC_DIR%/*} -I${GLIB_OUT}/prefix/include/glib-2.0 -I${GLIB_OUT}/prefix/lib/glib-2.0/include"
+  --extra-cflags="$IOS_TARGET"
+  --extra-cxxflags="$IOS_TARGET"
+  --extra-ldflags="$IOS_TARGET -L${GLIB_PC_DIR} -L${GLIB_OUT}/libffi-prefix/lib -L${GLIB_OUT}/zlib-prefix/lib -I${GLIB_OUT}/prefix/include/glib-2.0 -I${GLIB_OUT}/prefix/lib/glib-2.0/include -I${GLIB_OUT}/libffi-prefix/include"
   --prefix="$OUT"
 )
 
 echo "### QEMU configure（iOS arm64 交叉编译，--skip-meson）"
-if CC="${CC_BIN}" CXX="${CXX_BIN}" PKG_CONFIG_PATH="$GLIB_PC_DIR" ./configure "${QEMU_CONFIGURE_ARGS[@]}"; then
+if CC="${CC_BIN}" CXX="${CXX_BIN}" PKG_CONFIG_PATH="$COMBINED_PC" ./configure "${QEMU_CONFIGURE_ARGS[@]}"; then
   echo "configure 成功"
 else
   echo "### configure 失败（非 meson 阶段，请检查日志）"
@@ -176,8 +282,8 @@ EOF
 # ---------- Step 4: 手动 meson setup + ninja ----------
 echo "### 手动执行 meson setup"
 cd "$BUILD_DIR"
-PKG_CONFIG_PATH="$GLIB_PC_DIR" "$MESON" setup --reconfigure --cross-file "$CF" --backend ninja . "$QEMU_SRC"
-PKG_CONFIG_PATH="$GLIB_PC_DIR" "$NINJA" -C . -j"$(sysctl -n hw.ncpu)"
+PKG_CONFIG_PATH="$COMBINED_PC" "$MESON" setup --reconfigure --cross-file "$CF" --backend ninja . "$QEMU_SRC"
+PKG_CONFIG_PATH="$COMBINED_PC" "$NINJA" -C . -j"$(sysctl -n hw.ncpu)"
 
 echo "### 安装产物到 $OUT"
 mkdir -p "$OUT"
@@ -190,10 +296,14 @@ if [[ -f "$QEMU_BIN" ]]; then
   file "$OUT/bin/qemu-system-aarch64-ios" 2>/dev/null || true
 else
   echo "WARNING: 未找到 $QEMU_BIN，列出 build 目录产物"
-  ls -la "$BUILD_DIR" 2>/dev/null | grep -iE "qemu|\.o$|\.a$|\.dylib$" | head -10
   find "$BUILD_DIR" -name "qemu-system-*" -type f 2>/dev/null | head
 fi
 
-echo "QEMU iOS 构建完成"
-ls -la "$OUT"/bin 2>/dev/null || echo "  (产物路径见 build 日志)"
+# 同步 QEMU 所需静态库（glib/zlib/libffi）到 OUT/lib
+mkdir -p "$OUT/lib"
+find "$GLIB_OUT/prefix/lib" -name "*.a" -exec cp -f {} "$OUT/lib/" \; 2>/dev/null || true
+find "$GLIB_OUT/libffi-prefix/lib" -name "*.a" -exec cp -f {} "$OUT/lib/" \; 2>/dev/null || true
+find "$GLIB_OUT/zlib-prefix/lib" -name "*.a" -exec cp -f {} "$OUT/lib/" \; 2>/dev/null || true
+echo "QEMU iOS 构建完成: $OUT"
+ls -la "$OUT"/bin 2>/dev/null || true
 ls -la "$OUT"/lib 2>/dev/null | head -5 || true
