@@ -140,6 +140,7 @@ objc = [$CC_QUOTED, '--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
 objcpp = [$CXX_QUOTED, '--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
 ar = ['ar']
 strip = ['strip']
+pkg_config = ['PKG_CONFIG_PATH=${GLIB_PC_DIR} pkg-config']
 
 [built-in options]
 c_args = ['--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
@@ -152,7 +153,6 @@ objcpp_args = ['--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
 [properties]
 can_run_host_bins = false
 root = '${SDK}'
-pkg_config = ['PKG_CONFIG_PATH=${GLIB_PC_DIR} pkg-config']
 
 [host_machine]
 system = 'darwin'
