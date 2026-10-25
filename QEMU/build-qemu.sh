@@ -32,6 +32,7 @@ export PYTHON="$VENV/bin/python"
 
 QEMU_CONFIGURE_ARGS=(
   --python="$PYTHON"
+  --skip-meson
   --target-list=aarch64-softmmu
   --enable-tcg
   --disable-kvm
@@ -60,7 +61,7 @@ else
 fi
 
 # 修补 QEMU 生成的 config-meson.cross：补 can_run_host_bins=false + 正确 host_machine
-# （QEMU 生成在 build 子目录；configure 开头会自动 cd 到 build/）
+# QEMU 的 configure 开头会 cd 到 ./build（build 输出目录），交叉文件生成在 build/ 下。
 BUILD_DIR="$PWD/build"
 CF=""
 for cand in "$BUILD_DIR/config-meson.cross" "$PWD/config-meson.cross"; do
@@ -68,10 +69,13 @@ for cand in "$BUILD_DIR/config-meson.cross" "$PWD/config-meson.cross"; do
 done
 if [[ -z "$CF" ]]; then
   echo "ERROR: 找不到 QEMU 生成的 config-meson.cross"
+  ls -la "$BUILD_DIR" 2>/dev/null || true
   exit 1
 fi
 echo "### 增强 meson 交叉文件: $CF"
-cat >> "$CF" <<EOF
+# 去重：若已有同名 section 则跳过，避免重复定义
+if ! grep -q "can_run_host_bins" "$CF"; then
+  cat >> "$CF" <<EOF
 
 # --- DebianTerminal iOS 目标补丁（覆盖同架构误判 + 禁止运行宿主可执行文件）---
 [properties]
@@ -85,26 +89,34 @@ cpu_family = 'aarch64'
 cpu = 'aarch64'
 endian = 'little'
 EOF
+fi
 
-# 手动 re-run meson setup（跳过已成功的 configure 阶段，直接补 meson）
-echo "### 重新执行 meson setup"
+# 手动 meson setup（--skip-meson 跳过了 configure 内部的 meson，现在补齐）
+echo "### 手动执行 meson setup"
 cd "$BUILD_DIR"
-# QEMU 用 meson 子模块；优先 venv 里的 meson，否则系统
 MESON=""
 if [[ -x "$VENV/bin/meson" ]]; then MESON="$VENV/bin/meson"; fi
 if [[ -z "$MESON" ]] && command -v meson >/dev/null 2>&1; then MESON="$(command -v meson)"; fi
 if [[ -z "$MESON" ]]; then
-  echo "ERROR: 找不到 meson，安装到 venv"
-  "$VENV/bin/python" -m pip install --quiet meson ninja
+  "$VENV/bin/python" -m pip install --quiet "meson>=1.5.0"
   MESON="$VENV/bin/meson"
 fi
-"$MESON" setup --reconfigure . 2>&1 | tail -20
+NINJA=""
+if [[ -x "$VENV/bin/ninja" ]]; then NINJA="$VENV/bin/ninja"; fi
+if [[ -z "$NINJA" ]] && command -v ninja >/dev/null 2>&1; then NINJA="$(command -v ninja)"; fi
+if [[ -z "$NINJA" ]]; then
+  "$VENV/bin/python" -m pip install --quiet ninja
+  NINJA="$VENV/bin/ninja"
+fi
+echo "  meson: $MESON"
+echo "  ninja: $NINJA"
+"$MESON" setup --reconfigure --backend ninja . ..
+"$NINJA" -C . -j"$(sysctl -n hw.ncpu)"
 
-echo "### make"
-cd "$QEMU_SRC"
-make -j"$(sysctl -n hw.ncpu)"
+echo "### 安装产物到 $OUT"
+mkdir -p "$OUT"
+"$NINJA" -C . install DESTDIR="" || true
 
-echo "QEMU iOS 构建完成: $OUT"
+echo "QEMU iOS 构建完成"
 ls -la "$OUT"/bin 2>/dev/null || echo "  (产物路径见 build 日志)"
-# 静态库模式：QEMU 会产出 .a，需要把对应 .o/.a 链接进 App
 ls -la "$OUT"/lib 2>/dev/null | head -5 || true
