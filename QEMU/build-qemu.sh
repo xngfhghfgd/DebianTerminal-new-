@@ -9,8 +9,9 @@
 #    can_run_host_bins=false + 正确 host_machine）。
 #  - QEMU 9.x 将 glib 作为硬依赖。iOS 目标需要为 iOS 交叉编译 glib
 #    （静态库），并通过 pkg-config 指向它。
-#  - 策略：
+#  - 策略（参考 UTM 的 build_dependencies.sh 思路）：
 #      1. 交叉编译 glib 为 iOS 静态库 + 生成 .pc 文件
+#         （pcre2 子项目禁用 JIT：iOS 无 RWX 可执行内存，SLJIT JIT 不可用）
 #      2. ./configure --skip-meson（只生成 host 端配置）
 #      3. 手动生成 meson 交叉文件（can_run_host_bins=false）
 #      4. 手动 meson setup + ninja 完成构建
@@ -24,6 +25,16 @@ OUT="${OUT:-$PWD/build/qemu-ios}"
 GLIB_OUT="$PWD/build/glib-ios"
 CC_BIN="$(xcrun --find clang)"
 CXX_BIN="$(xcrun --find clang++)"
+
+# 共用 Python venv（glib 与 QEMU 构建都用 meson/ninja）
+PY="$(brew --prefix)/opt/python@3.12/bin/python3.12"
+VENV="$PWD/.qemu-pyvenv"
+rm -rf "$VENV"
+"$PY" -m venv "$VENV"
+"$VENV/bin/python" -m pip install --quiet "meson>=1.5.0" ninja tomli distlib
+MESON="$VENV/bin/meson"
+NINJA="$VENV/bin/ninja"
+export PYTHON="$VENV/bin/python"
 
 # ---------- Step 1: 交叉编译 glib for iOS ----------
 echo "### 交叉编译 glib $GLIB_VERSION for iOS arm64"
@@ -58,21 +69,14 @@ cpu = 'aarch64'
 endian = 'little'
 GLEOF
 
-# glib 需要 meson + ninja（复用同一 venv）
-PY="$(brew --prefix)/opt/python@3.12/bin/python3.12"
-VENV="$PWD/.qemu-pyvenv"
-rm -rf "$VENV"
-"$PY" -m venv "$VENV"
-"$VENV/bin/python" -m pip install --quiet "meson>=1.5.0" ninja
-MESON="$VENV/bin/meson"
-NINJA="$VENV/bin/ninja"
 "$MESON" setup "$GLIB_OUT/build" \
   --cross-file "$GLIB_OUT/meson-ios-cross.txt" \
   -D prefix="$GLIB_OUT/prefix" \
   -D libdir=lib \
   -D default_library=static \
   -D man=false \
-  -D tests=false
+  -D tests=false \
+  -D pcre2:jit=auto
 "$NINJA" -C "$GLIB_OUT/build" -j"$(sysctl -n hw.ncpu)"
 "$NINJA" -C "$GLIB_OUT/build" install DESTDIR=""
 GLIB_PC_DIR="$GLIB_OUT/prefix/lib/pkgconfig"
@@ -86,13 +90,7 @@ export PKG_CONFIG_SYSROOT_DIR="$SDK"
 cd "$QEMU_SRC"
 
 # ---------- Step 2: QEMU configure（skip-meson，只生成 host 配置） ----------
-PY="$(brew --prefix)/opt/python@3.12/bin/python3.12"
 echo "### 使用 Python: $PY ($($PY --version 2>&1))"
-VENV="$PWD/.qemu-pyvenv"
-rm -rf "$VENV"
-"$PY" -m venv "$VENV"
-"$VENV/bin/python" -m pip install --quiet tomli distlib
-export PYTHON="$VENV/bin/python"
 
 QEMU_CONFIGURE_ARGS=(
   --python="$PYTHON"
@@ -167,22 +165,6 @@ EOF
 # ---------- Step 4: 手动 meson setup + ninja ----------
 echo "### 手动执行 meson setup"
 cd "$BUILD_DIR"
-MESON=""
-if [[ -x "$VENV/bin/meson" ]]; then MESON="$VENV/bin/meson"; fi
-if [[ -z "$MESON" ]] && command -v meson >/dev/null 2>&1; then MESON="$(command -v meson)"; fi
-if [[ -z "$MESON" ]]; then
-  "$VENV/bin/python" -m pip install --quiet "meson>=1.5.0"
-  MESON="$VENV/bin/meson"
-fi
-NINJA=""
-if [[ -x "$VENV/bin/ninja" ]]; then NINJA="$VENV/bin/ninja"; fi
-if [[ -z "$NINJA" ]] && command -v ninja >/dev/null 2>&1; then NINJA="$(command -v ninja)"; fi
-if [[ -z "$NINJA" ]]; then
-  "$VENV/bin/python" -m pip install --quiet ninja
-  NINJA="$VENV/bin/ninja"
-fi
-echo "  meson: $MESON"
-echo "  ninja: $NINJA"
 PKG_CONFIG_PATH="$GLIB_PC_DIR" "$MESON" setup --reconfigure --cross-file "$CF" --backend ninja . "$QEMU_SRC"
 PKG_CONFIG_PATH="$GLIB_PC_DIR" "$NINJA" -C . -j"$(sysctl -n hw.ncpu)"
 
