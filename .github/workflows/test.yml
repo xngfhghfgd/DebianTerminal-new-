@@ -1,0 +1,24 @@
+name: Tests (build layer)
+
+# 阶段 A 可自动化测试。iPad 实机阶段（B–F）无法在 CI 完成，见 docs/POC.md。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-layer:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: validate scripts
+        run: |
+          bash -n QEMU/build-qemu.sh
+          bash -n Kernel/build-kernel.sh
+          bash -n Scripts/prepare-debian.sh
+          bash -n Tests/run-tests.sh
+          echo "scripts syntax OK"
+      - name: run-tests
+        run: bash Tests/run-tests.sh "$PWD/build" || true

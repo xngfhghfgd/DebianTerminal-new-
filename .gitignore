@@ -1,0 +1,23 @@
+# build products
+build/
+DerivedData/
+*.ipa
+*.pkg
+
+# Xcode
+xcuserdata/
+*.xcscmblueprint
+
+# 大的二进制产物（内核 / Debian 镜像 / QEMU）不入库，CI 生成
+qemu/
+linux/
+debian-12-genericcloud-arm64.qcow2
+build/kernel/
+build/qemu-ios/
+build/debian12.img
+
+# 签名材料（绝不提交）
+*.p12
+*.mobileprovision
+Certificates/
+credentials/

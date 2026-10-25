@@ -1,0 +1,41 @@
+# XcodeGen 项目描述 → 生成 DebianTerminal.xcodeproj
+# CI 中 `brew install xcodegen && xcodegen generate` 生成 pbxproj 再 xcodebuild。
+# 这样无需手写易错的 UUID，且可复现。
+
+name: DebianTerminal
+options:
+  bundleIdPrefix: com.debangit
+  createIntermediateGroups: true
+
+targets:
+  DebianTerminal:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: ../DebianTerminal
+    info:
+      path: ../DebianTerminal/Info.plist
+      properties:
+        CFBundleDisplayName: DebianTerminal
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UIRequiresFullScreen: true
+        LSApplicationCategoryType: public.app-category.developer-tools
+    entitlements:
+      path: ../DebianTerminal/DebianTerminal.entitlements
+      properties:
+        com.apple.security.app-sandbox: false
+        # get-task-allow 由签名工具（SideStore/AltStore）按需添加，
+        # 不写死到 entitlements，避免误导可安装性。
+    settings:
+      base:
+        SWIFT_VERSION: "5.9"
+        IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_IDENTITY: ""
+        CODE_SIGNING_REQUIRED: "NO"
+        CODE_SIGN_STYLE: "Manual"
+        PRODUCT_BUNDLE_IDENTIFIER: "com.debangit.debant"
+        ENABLE_USER_SCRIPT_SANDBOXING: "NO"

@@ -1,0 +1,11 @@
+# 固定依赖版本（避免每次构建切到未验证版本）
+
+# QEMU（基线，UTM 同源）
+# QEMU_VERSION=10.0.12
+# TCTI: ktemkin/qemu @ tcg/aarch64-tcti 分支
+
+# Linux Kernel（virt_defconfig 基线）
+# KERNEL_VERSION=6.1.x
+
+# Debian Guest
+# GUEST=Debian 12.9 bookworm genericcloud arm64 (qcow2)

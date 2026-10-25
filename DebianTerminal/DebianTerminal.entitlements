@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- 沙盒：允许读写 Documents（磁盘镜像）。
+         App Store 审核时可能需要 com.apple.security.app-sandbox，
+         但 POC 阶段本地签名走 SideStore，暂关沙盒限制。 -->
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+</dict>
+</plist>
