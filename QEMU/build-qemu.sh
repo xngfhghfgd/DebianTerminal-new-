@@ -7,21 +7,88 @@
 #  - QEMU 9.2 的 ./configure 结尾会立即 meson setup，交叉到 iOS 时
 #    报 "Executables ... are not runnable"（meson 生成交叉文件缺
 #    can_run_host_bins=false + 正确 host_machine）。
-#  - 策略：允许 configure 走到 meson 阶段失败 → 修补它生成的
-#    config-meson.cross → 手动 re-run meson setup + ninja 完成构建。
+#  - QEMU 9.x 将 glib 作为硬依赖。iOS 目标需要为 iOS 交叉编译 glib
+#    （静态库），并通过 pkg-config 指向它。
+#  - 策略：
+#      1. 交叉编译 glib 为 iOS 静态库 + 生成 .pc 文件
+#      2. ./configure --skip-meson（只生成 host 端配置）
+#      3. 手动生成 meson 交叉文件（can_run_host_bins=false）
+#      4. 手动 meson setup + ninja 完成构建
 set -euo pipefail
 
 SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 QEMU_SRC="${QEMU_SRC:-qemu-src}"
+GLIB_SRC="${GLIB_SRC:-glib-src}"
+GLIB_VERSION="${GLIB_VERSION:-2.84.4}"
 OUT="${OUT:-$PWD/build/qemu-ios}"
+GLIB_OUT="$PWD/build/glib-ios"
 CC_BIN="$(xcrun --find clang)"
 CXX_BIN="$(xcrun --find clang++)"
 
+# ---------- Step 1: 交叉编译 glib for iOS ----------
+echo "### 交叉编译 glib $GLIB_VERSION for iOS arm64"
+if [[ ! -d "$GLIB_SRC" ]]; then
+  curl -sSL -o glib.tar.xz "https://download.gnome.org/sources/glib/2.84/glib-${GLIB_VERSION}.tar.xz"
+  tar xf glib.tar.xz
+  rm glib.tar.xz
+  mv "glib-${GLIB_VERSION}" "$GLIB_SRC"
+fi
+mkdir -p "$GLIB_OUT"
+cd "$GLIB_SRC"
+# 为 glib 生成 meson 交叉文件（指向 iOS clang）
+cat > "$GLIB_OUT/meson-ios-cross.txt" <<GLEOF
+[binaries]
+c = ['${CC_BIN}', '--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
+ar = ['ar']
+strip = ['strip']
+
+[built-in options]
+c_args = ['--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
+c_link_args = ['--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
+
+[properties]
+can_run_host_bins = false
+
+[host_machine]
+system = 'darwin'
+subsystem = 'ios'
+kernel = 'xnu'
+cpu_family = 'aarch64'
+cpu = 'aarch64'
+endian = 'little'
+GLEOF
+
+# glib 需要 meson + ninja（复用同一 venv）
+PY="$(brew --prefix)/opt/python@3.12/bin/python3.12"
+VENV="$PWD/.qemu-pyvenv"
+rm -rf "$VENV"
+"$PY" -m venv "$VENV"
+"$VENV/bin/python" -m pip install --quiet "meson>=1.5.0" ninja
+MESON="$VENV/bin/meson"
+NINJA="$VENV/bin/ninja"
+"$MESON" setup "$GLIB_OUT/build" \
+  --cross-file "$GLIB_OUT/meson-ios-cross.txt" \
+  -D prefix="$GLIB_OUT/prefix" \
+  -D libdir=lib \
+  -D static=true \
+  -D shared=false \
+  -D man=false \
+  -D tests=false \
+  -D valgrind=false \
+  -D python=false
+"$NINJA" -C "$GLIB_OUT/build" -j"$(sysctl -n hw.ncpu)"
+"$NINJA" -C "$GLIB_OUT/build" install DESTDIR=""
+GLIB_PC_DIR="$GLIB_OUT/prefix/lib/pkgconfig"
+echo "### glib for iOS 构建完成: $GLIB_OUT"
+ls -la "$GLIB_PC_DIR" | head -5 || true
+
+# 让 pkg-config 找到 glib 的 .pc 文件（host 端 glib 会干扰，指定优先搜索路径）
+export PKG_CONFIG_PATH="$GLIB_PC_DIR:$PKG_CONFIG_PATH"
+export PKG_CONFIG_SYSROOT_DIR="$SDK"
+
 cd "$QEMU_SRC"
 
-# QEMU 构建需要 Python 3.9–3.12。macOS 15 runner 的 /usr/bin/python3 是 3.9.6（无 pip），
-# brew 的 python@3.12 有 pip 但需要预装 tomli（Python<3.11 缺 tomllib）。
-# 策略：brew 装 python@3.12，创建 venv 装构建依赖，--python 指向它。
+# ---------- Step 2: QEMU configure（skip-meson，只生成 host 配置） ----------
 PY="$(brew --prefix)/opt/python@3.12/bin/python3.12"
 echo "### 使用 Python: $PY ($($PY --version 2>&1))"
 VENV="$PWD/.qemu-pyvenv"
@@ -49,25 +116,23 @@ QEMU_CONFIGURE_ARGS=(
   --cross-prefix=aarch64-apple-ios
   --extra-cflags="--target=arm64-apple-ios17.0 --sysroot=${SDK}"
   --extra-cxxflags="--target=arm64-apple-ios17.0 --sysroot=${SDK}"
-  --extra-ldflags="--target=arm64-apple-ios17.0 --sysroot=${SDK}"
+  --extra-ldflags="--target=arm64-apple-ios17.0 --sysroot=${SDK} -L${GLIB_PC_DIR%/*} -I${GLIB_OUT}/prefix/include/glib-2.0 -I${GLIB_OUT}/prefix/lib/glib-2.0/include"
   --prefix="$OUT"
 )
 
-echo "### QEMU configure（iOS arm64 交叉编译，允许 meson 阶段失败）"
-if CC="${CC_BIN}" CXX="${CXX_BIN}" ./configure "${QEMU_CONFIGURE_ARGS[@]}"; then
+echo "### QEMU configure（iOS arm64 交叉编译，--skip-meson）"
+if CC="${CC_BIN}" CXX="${CXX_BIN}" PKG_CONFIG_PATH="$GLIB_PC_DIR" ./configure "${QEMU_CONFIGURE_ARGS[@]}"; then
   echo "configure 成功"
 else
-  echo "### configure 在 meson 阶段失败（预期），检查生成的交叉文件"
+  echo "### configure 失败（非 meson 阶段，请检查日志）"
+  exit 1
 fi
 
-# --skip-meson 跳过了 configure 内部的 meson 调用，config-meson.cross 未被生成。
-# 这里手动生成一份正确的 meson 交叉文件（iOS aarch64 目标），再 meson setup。
-cd "$QEMU_SRC"
+# ---------- Step 3: 手动生成 meson 交叉文件（iOS 目标 + glib pkg-config） ----------
 BUILD_DIR="$PWD/build"
 mkdir -p "$BUILD_DIR"
 CF="$BUILD_DIR/config-meson.cross"
 echo "### 生成 meson 交叉文件: $CF"
-# meson 交叉文件的 binaries 需要带引号的路径；用 printf 预生成避免 bash 扩展问题
 CC_QUOTED="'$CC_BIN'"
 CXX_QUOTED="'$CXX_BIN'"
 cat > "$CF" <<EOF
@@ -91,6 +156,7 @@ objcpp_args = ['--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
 [properties]
 can_run_host_bins = false
 root = '${SDK}'
+pkg_config = ['PKG_CONFIG_PATH=${GLIB_PC_DIR} pkg-config']
 
 [host_machine]
 system = 'darwin'
@@ -101,7 +167,7 @@ cpu = 'aarch64'
 endian = 'little'
 EOF
 
-# 手动 meson setup（--skip-meson 跳过了 configure 内部的 meson，现在补齐）
+# ---------- Step 4: 手动 meson setup + ninja ----------
 echo "### 手动执行 meson setup"
 cd "$BUILD_DIR"
 MESON=""
@@ -120,12 +186,12 @@ if [[ -z "$NINJA" ]]; then
 fi
 echo "  meson: $MESON"
 echo "  ninja: $NINJA"
-"$MESON" setup --reconfigure --cross-file "$CF" --backend ninja . "$QEMU_SRC"
-"$NINJA" -C . -j"$(sysctl -n hw.ncpu)"
+PKG_CONFIG_PATH="$GLIB_PC_DIR" "$MESON" setup --reconfigure --cross-file "$CF" --backend ninja . "$QEMU_SRC"
+PKG_CONFIG_PATH="$GLIB_PC_DIR" "$NINJA" -C . -j"$(sysctl -n hw.ncpu)"
 
 echo "### 安装产物到 $OUT"
 mkdir -p "$OUT"
-"$NINJA" -C . install DESTDIR="" || true
+PKG_CONFIG_PATH="$GLIB_PC_DIR" "$NINJA" -C . install DESTDIR="" || true
 
 echo "QEMU iOS 构建完成"
 ls -la "$OUT"/bin 2>/dev/null || echo "  (产物路径见 build 日志)"
