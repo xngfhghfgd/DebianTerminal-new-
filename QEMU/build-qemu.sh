@@ -53,10 +53,8 @@ OBJCC="${CC_BIN} --sysroot=${SDK} --target=arm64-apple-ios17.0" \
   --disable-spice \
   --disable-pixman \
   --disable-slirp \
-  --disable-tests \
-  --disable-tools \
   --disable-docs \
-  --disable-relocatable \
+  --disable-guest-agent \
   --cross-prefix=aarch64-apple-ios \
   --prefix="$OUT" \
   --extra-cflags="--target=arm64-apple-ios17.0 --sysroot=${SDK}" \
