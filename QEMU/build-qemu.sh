@@ -366,17 +366,23 @@ done
 "$NINJA" -C . -j"$(sysctl -n hw.ncpu)"
 
 echo "### 安装产物到 $OUT"
-mkdir -p "$OUT"
-# 不依赖 meson install（DESTDIR 行为因版本而异），直接从 build 目录收集 QEMU 产物
-QEMU_BIN="$BUILD_DIR/qemu-system-aarch64"
-if [[ -f "$QEMU_BIN" ]]; then
-  mkdir -p "$OUT/bin"
+mkdir -p "$OUT/bin"
+# QEMU meson 交叉构建时加 -Dqemu_suffix=unsigned，产物名变为 qemu-system-aarch64-unsigned
+# 两种命名都尝试收集，确保拿到实际产物
+QEMU_BIN=""
+for cand in \
+  "$BUILD_DIR/qemu-system-aarch64-unsigned" \
+  "$BUILD_DIR/qemu-system-aarch64"; do
+  if [[ -f "$cand" ]]; then QEMU_BIN="$cand"; break; fi
+done
+if [[ -n "$QEMU_BIN" ]]; then
   cp "$QEMU_BIN" "$OUT/bin/qemu-system-aarch64-ios"
-  echo "QEMU 可执行文件已复制到: $OUT/bin/qemu-system-aarch64-ios"
+  echo "QEMU 可执行文件已复制: $QEMU_BIN -> $OUT/bin/qemu-system-aarch64-ios"
   file "$OUT/bin/qemu-system-aarch64-ios" 2>/dev/null || true
 else
-  echo "WARNING: qemu-system-aarch64 not found at $QEMU_BIN - listing build dir"
+  echo "ERROR: qemu-system-aarch64 产物未找到（尝试了 -unsigned 与默认名）"
   find "$BUILD_DIR" -name "qemu-system-*" -type f 2>/dev/null | head
+  exit 1
 fi
 
 # 同步 QEMU 所需静态库（glib/zlib/libffi）到 OUT/lib
