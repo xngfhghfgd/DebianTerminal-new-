@@ -152,7 +152,8 @@ jobs:
 
           echo "### xcodebuild 编译（未签名）"
           brew install xcodegen 2>/dev/null || true
-          command -v xcodegen >/dev/null 2>&1 && xcodegen generate
+          # xcodegen 默认找 project.yml；本仓库用 xcodegen.yml，需显式传文件名
+          command -v xcodegen >/dev/null 2>&1 && xcodegen generate xcodegen.yml
           xcodebuild \
             -project DebianTerminal.xcodeproj \
             -scheme DebianTerminal \
