@@ -152,23 +152,24 @@ final class VMManager: @unchecked Sendable {
                            stdoutFD: Int32,
                            stdinFD: Int32) throws -> pid_t {
         // posix_spawn_file_actions_t 在 iOS 以不透明 struct 导入；
-        // 通过 stack allocation + &spawn 取指针传给 C API。
-        var spawn = posix_spawn_file_actions_t()
-        posix_spawn_file_actions_init(&spawn)
-        // 关闭子进程 stderr（POC 简化，避免挂起）
-        posix_spawn_file_actions_addclose(&spawn, 2)
-        // stdout -> stdoutFD
-        posix_spawn_file_actions_adddup2(&spawn, stdoutFD, 1)
-        // stdin <- stdinFD
-        posix_spawn_file_actions_adddup2(&spawn, stdinFD, 0)
+        // 直接分配 UnsafeMutablePointer 并 init。
+        guard let actions = UnsafeMutablePointer<posix_spawn_file_actions_t?>.allocate(capacity: 1) else {
+            throw VMError.ioError("posix_spawn_file_actions_t 分配失败")
+        }
+        defer {
+            posix_spawn_file_actions_destroy(actions)
+            actions.deallocate()
+        }
+        posix_spawn_file_actions_init(actions)
+        posix_spawn_file_actions_addclose(actions, 2)
+        posix_spawn_file_actions_adddup2(actions, stdoutFD, 1)
+        posix_spawn_file_actions_adddup2(actions, stdinFD, 0)
 
         var pid: pid_t = 0
-        // 构造 argv：以 NUL 结尾的 C 字符串数组
         let cArgs = args.map { strdup($0) }
         defer { cArgs.forEach { if let p = $0 { free(p) } } }
         var argv = cArgs + [nil]
 
-        // path/argv/env 均需要 UnsafePointer，逐层桥接
         let ret = qemuPath.withCString { pathPtr -> Int32 in
             withUnsafeMutablePointer(to: &pid) { pidPtr -> Int32 in
                 withUnsafeMutablePointer(to: &argv) { argvPtr -> Int32 in
@@ -176,12 +177,11 @@ final class VMManager: @unchecked Sendable {
                         to: UnsafeMutablePointer<CChar>?.self,
                         capacity: argv.count
                     ) { basePtr in
-                        posix_spawn(pidPtr, pathPtr, &spawn, nil, basePtr, environ)
+                        posix_spawn(pidPtr, pathPtr, actions, nil, basePtr, environ)
                     }
                 }
             }
         }
-        posix_spawn_file_actions_destroy(&spawn)
 
         guard ret == 0 else { throw VMError.spawnFailed }
         return pid
