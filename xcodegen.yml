@@ -13,9 +13,9 @@ targets:
     platform: iOS
     deploymentTarget: "17.0"
     sources:
-      - path: ../DebianTerminal
+      - path: DebianTerminal
     info:
-      path: ../DebianTerminal/Info.plist
+      path: DebianTerminal/Info.plist
       properties:
         CFBundleDisplayName: DebianTerminal
         UILaunchScreen: {}
@@ -24,7 +24,7 @@ targets:
         UIRequiresFullScreen: true
         LSApplicationCategoryType: public.app-category.developer-tools
     entitlements:
-      path: ../DebianTerminal/DebianTerminal.entitlements
+      path: DebianTerminal/DebianTerminal.entitlements
       properties:
         com.apple.security.app-sandbox: false
         # get-task-allow 由签名工具（SideStore/AltStore）按需添加，
