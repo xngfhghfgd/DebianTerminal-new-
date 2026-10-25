@@ -186,7 +186,8 @@ ls "$COMBINED_PC"
 
 # 让 pkg-config 找到 glib 的 .pc 文件（host 端 glib 会干扰，用包装脚本固化搜索路径）
 export PKG_CONFIG_PATH="$COMBINED_PC"
-export PKG_CONFIG_SYSROOT_DIR="$SDK"
+# 不设 PKG_CONFIG_SYSROOT_DIR：glib 前缀是 /Users/runner 绝对路径，
+# sysroot 会让 meson 把 -I 前缀改到 SDK 下导致 glib.h 找不到。
 
 # 生成 pkg-config 包装脚本（meson 交叉文件只接受可执行文件路径）
 PKG_WRAPPER="$GLIB_OUT/pkg-config-ios"
@@ -287,6 +288,13 @@ echo "### meson cross file written: $CF (pkg-config -> $PKG_WRAPPER)"
 echo "### 手动执行 meson setup"
 cd "$BUILD_DIR"
 # wrapper 自带 PKG_CONFIG_PATH，无需 export
+# 诊断：确认 pkg-config 能解析 glib-2.0 的 Cflags / Libs
+echo "### glib-2.0.pc 内容："
+cat "$COMBINED_PC/glib-2.0.pc" 2>/dev/null || echo "  (缺失 glib-2.0.pc)"
+echo "### pkg-config --cflags glib-2.0:"
+PKG_CONFIG_PATH="$COMBINED_PC" pkg-config --cflags glib-2.0 2>&1 || echo "  (pkg-config 解析失败)"
+echo "### pkg-config --libs glib-2.0:"
+PKG_CONFIG_PATH="$COMBINED_PC" pkg-config --libs glib-2.0 2>&1 || echo "  (pkg-config 解析失败)"
 "$MESON" setup --reconfigure --cross-file "$CF" --backend ninja . "$QEMU_SRC"
 "$NINJA" -C . -j"$(sysctl -n hw.ncpu)"
 
