@@ -147,15 +147,12 @@ final class VMManager: @unchecked Sendable {
     /// - 参数：qemuPath（绝对路径）、args（含可执行文件在首元素）、
     ///   stdoutFD（子进程 stdout 重定向的 fd）、stdinFD（子进程 stdin 重定向的 fd）。
     /// - 返回子进程 pid；失败抛 `VMError.spawnFailed`。
-    /// 用 `posix_spawn` 启动 QEMU 进程。
-    /// - 参数：qemuPath（绝对路径）、args（含可执行文件在首元素）、
-    ///   stdoutFD（子进程 stdout 重定向的 fd）、stdinFD（子进程 stdin 重定向的 fd）。
-    /// - 返回子进程 pid；失败抛 `VMError.spawnFailed`。
     private func spawnQEMU(qemuPath: String,
                            args: [String],
                            stdoutFD: Int32,
                            stdinFD: Int32) throws -> pid_t {
-        // posix_spawn_file_actions_t：栈上创建，逐层桥接为 C 指针
+        // posix_spawn_file_actions_t 在 iOS 以不透明 struct 导入；
+        // 通过 stack allocation + &spawn 取指针传给 C API。
         var spawn = posix_spawn_file_actions_t()
         posix_spawn_file_actions_init(&spawn)
         // 关闭子进程 stderr（POC 简化，避免挂起）
