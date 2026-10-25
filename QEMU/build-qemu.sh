@@ -20,18 +20,15 @@ CXX_BIN="$(xcrun --find clang++)"
 
 cd "$QEMU_SRC"
 
-# QEMU v9.2.0 需要 Python 3.9–3.12；macOS 15 runner 的 homebrew python3 是 3.14，
-# 创建 venv 时报 "found no usable distlib"。
-# 最稳妥：用 /usr/bin/python3（系统 3.9/3.13，自带 distlib），并预装构建依赖。
+# 选一个自带 distlib/tomli 的 Python 解释器：
+#  - macOS 系统 /usr/bin/python3（3.9，自带 tomli 兼容包）优先
+#  - 否则 brew 的 python@3.12
 if command -v /usr/bin/python3 >/dev/null 2>&1; then
   PY=/usr/bin/python3
 else
-  PY="$(command -v python3)"
+  PY="$(brew --prefix)/opt/python@3.12/bin/python3.12"
 fi
-echo "### 使用系统 Python: $PY ($($PY --version 2>&1))"
-# QEMU configure 需要这些 Python 包（系统 Python 缺则装）
-"$PY" -m pip install --quiet distlib virtualenv tomli tomllib pyyaml 2>/dev/null || \
-  "$PY" -m ensurepip --upgrade 2>/dev/null || true
+echo "### 使用 Python: $PY ($($PY --version 2>&1))"
 export PYTHON="$PY"
 
 # 让 QEMU 使用已装好依赖的解释器（--python 指向它，避免重建隔离 venv）
