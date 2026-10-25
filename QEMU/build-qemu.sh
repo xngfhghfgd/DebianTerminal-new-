@@ -139,7 +139,7 @@ cat > "$GLIB_OUT/meson-ios-cross.txt" <<GLEOF
 c = ['${CC_BIN}', '--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
 ar = ['ar']
 strip = ['strip']
-pkg_config = ['${PKG_WRAPPER_GLIB}']
+pkg-config = ['${PKG_WRAPPER_GLIB}']
 
 [built-in options]
 c_args = ['--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
@@ -256,7 +256,7 @@ objc = [$CC_QUOTED, '--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
 objcpp = [$CXX_QUOTED, '--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
 ar = ['ar']
 strip = ['strip']
-pkg_config = ['$PKG_WRAPPER']
+pkg-config = ['$PKG_WRAPPER']
 
 [built-in options]
 c_args = ['--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
@@ -277,7 +277,7 @@ cpu_family = 'aarch64'
 cpu = 'aarch64'
 endian = 'little'
 EOF
-echo "### meson cross file written: $CF (pkg_config -> $PKG_WRAPPER)"
+echo "### meson cross file written: $CF (pkg-config -> $PKG_WRAPPER)"
 
 # ---------- Step 4: 手动 meson setup + ninja ----------
 echo "### 手动执行 meson setup"
