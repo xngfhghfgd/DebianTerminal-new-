@@ -159,14 +159,18 @@ GLEOF
 
 # 切到 glib 源码目录再 meson setup（source dir = 当前目录）
 cd "$GLIB_SRC"
+# --force-fallback-for=pcre2: 强制用 glib 自带 subproject pcre2（iOS 静态），
+# 避免 meson 通过 cmake 找到 homebrew 的 macOS pcre2 dylib 导致链接架构不匹配
 "$MESON" setup "$GLIB_OUT/build" \
   --cross-file "$GLIB_OUT/meson-ios-cross.txt" \
+  --force-fallback-for=pcre2 \
   -D prefix="$GLIB_OUT/prefix" \
   -D libdir=lib \
   -D default_library=static \
   -D man=false \
   -D tests=false \
-  -D pcre2:jit=disabled
+  -D pcre2:jit=disabled \
+  -D pcre2:grep=false
 "$NINJA" -C "$GLIB_OUT/build" -j"$(sysctl -n hw.ncpu)"
 DESTDIR="" "$NINJA" -C "$GLIB_OUT/build" install || true
 GLIB_PC_DIR="$GLIB_OUT/prefix/lib/pkgconfig"
