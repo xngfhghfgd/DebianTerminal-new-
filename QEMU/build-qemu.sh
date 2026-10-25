@@ -76,7 +76,7 @@ GLEOF
   -D default_library=static \
   -D man=false \
   -D tests=false \
-  -D pcre2:jit=auto
+  -D pcre2:jit=disabled
 "$NINJA" -C "$GLIB_OUT/build" -j"$(sysctl -n hw.ncpu)"
 "$NINJA" -C "$GLIB_OUT/build" install DESTDIR=""
 GLIB_PC_DIR="$GLIB_OUT/prefix/lib/pkgconfig"
