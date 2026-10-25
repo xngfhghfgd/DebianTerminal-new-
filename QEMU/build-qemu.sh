@@ -78,7 +78,7 @@ GLEOF
   -D tests=false \
   -D pcre2:jit=disabled
 "$NINJA" -C "$GLIB_OUT/build" -j"$(sysctl -n hw.ncpu)"
-"$NINJA" -C "$GLIB_OUT/build" install DESTDIR=""
+DESTDIR="" "$NINJA" -C "$GLIB_OUT/build" install || true
 GLIB_PC_DIR="$GLIB_OUT/prefix/lib/pkgconfig"
 echo "### glib for iOS 构建完成: $GLIB_OUT"
 ls -la "$GLIB_PC_DIR" | head -5 || true
@@ -170,12 +170,17 @@ PKG_CONFIG_PATH="$GLIB_PC_DIR" "$NINJA" -C . -j"$(sysctl -n hw.ncpu)"
 
 echo "### 安装产物到 $OUT"
 mkdir -p "$OUT"
-# meson 的 install 目标通过 ninja 直接执行；DESTDIR 作为环境变量传递
-PKG_CONFIG_PATH="$GLIB_PC_DIR" DESTDIR="$OUT" "$NINJA" -C . install || true
-# 兜底：若 install 没把产物放到 OUT，直接收集 build 目录里的可执行文件
-if [[ ! -d "$OUT/bin" && ! -d "$OUT/lib" ]]; then
-  echo "  install 未生成 $OUT 子目录，从 build 目录收集"
-  find . -name "qemu-system-aarch64" -type f 2>/dev/null | head
+# 不依赖 meson install（DESTDIR 行为因版本而异），直接从 build 目录收集 QEMU 产物
+QEMU_BIN="$BUILD_DIR/qemu-system-aarch64"
+if [[ -f "$QEMU_BIN" ]]; then
+  mkdir -p "$OUT/bin"
+  cp "$QEMU_BIN" "$OUT/bin/qemu-system-aarch64-ios"
+  echo "QEMU 可执行文件已复制到: $OUT/bin/qemu-system-aarch64-ios"
+  file "$OUT/bin/qemu-system-aarch64-ios" 2>/dev/null || true
+else
+  echo "WARNING: 未找到 $QEMU_BIN，列出 build 目录产物"
+  ls -la "$BUILD_DIR" 2>/dev/null | grep -iE "qemu|\.o$|\.a$|\.dylib$" | head -10
+  find "$BUILD_DIR" -name "qemu-system-*" -type f 2>/dev/null | head
 fi
 
 echo "QEMU iOS 构建完成"
