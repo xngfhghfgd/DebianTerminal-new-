@@ -151,7 +151,7 @@ final class VMManager: @unchecked Sendable {
                            args: [String],
                            stdoutFD: Int32,
                            stdinFD: Int32) throws -> pid_t {
-        var spawn = posix_spawn_file_actions_t()
+        var spawn: posix_spawn_file_actions_t = .init()
         posix_spawn_file_actions_init(&spawn)
         // 关闭子进程 stderr（POC 简化，避免挂起）
         posix_spawn_file_actions_addclose(&spawn, 2)
