@@ -16,9 +16,14 @@ check() {
 
 echo "=== 阶段 A：构建测试 ==="
 check "$BUILD/qemu-ios"
-check "$BUILD/kernel/Image"
+# 内核与 Debian 镜像现在来自 kernel-debian job，下载到 build/guest-assets/
+check "$BUILD/guest-assets/Image"
+# 兼容旧布局：若 build/kernel/Image 存在也通过
+if [[ -e "$BUILD/kernel/Image" ]]; then
+  echo "PASS: $BUILD/kernel/Image (旧布局)"
+fi
 # debian12.img 可能离线缺失，仅提示
-if [[ -e "$BUILD/debian12.img" ]]; then
+if [[ -e "$BUILD/guest-assets/debian12.img" || -e "$BUILD/debian12.img" ]]; then
   echo "PASS: debian12.img 存在"
 else
   echo "WARN: debian12.img 缺失（离线），需在联网环境生成"
