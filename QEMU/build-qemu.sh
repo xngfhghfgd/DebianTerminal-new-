@@ -84,6 +84,7 @@ echo "### glib for iOS 构建完成: $GLIB_OUT"
 ls -la "$GLIB_PC_DIR" | head -5 || true
 
 # 让 pkg-config 找到 glib 的 .pc 文件（host 端 glib 会干扰，指定优先搜索路径）
+PKG_CONFIG_PATH="${PKG_CONFIG_PATH:-}"
 export PKG_CONFIG_PATH="$GLIB_PC_DIR:$PKG_CONFIG_PATH"
 export PKG_CONFIG_SYSROOT_DIR="$SDK"
 
