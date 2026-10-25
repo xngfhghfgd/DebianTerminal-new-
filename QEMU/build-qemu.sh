@@ -238,8 +238,14 @@ CF="$BUILD_DIR/config-meson.cross"
 echo "### 生成 meson 交叉文件: $CF"
 CC_QUOTED="'$CC_BIN'"
 CXX_QUOTED="'$CXX_BIN'"
-# 用真实的 host 端 pkg-config（meson 识别它），通过 PKG_CONFIG_PATH 环境变量让它读到 iOS 的 .pc
-HOST_PKG_CONFIG="$(command -v pkg-config || echo /opt/homebrew/bin/pkg-config)"
+# 生成 wrapper：宿主端 pkg-config + PKG_CONFIG_PATH 指向 iOS 的 .pc（含 glib/zlib/libffi/pcre2）
+cat > "$PKG_WRAPPER" <<WRAP
+#!/bin/sh
+# host 端 pkg-config，只搜索 iOS 库的 .pc（QEMU 构建期）
+export PKG_CONFIG_PATH="${COMBINED_PC}"
+exec pkg-config "\$@"
+WRAP
+chmod +x "$PKG_WRAPPER"
 cat > "$CF" <<EOF
 # 自动生成：DebianTerminal iOS aarch64 交叉编译（macOS host -> iOS）
 [binaries]
@@ -249,7 +255,7 @@ objc = [$CC_QUOTED, '--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
 objcpp = [$CXX_QUOTED, '--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
 ar = ['ar']
 strip = ['strip']
-pkg_config = ['$HOST_PKG_CONFIG']
+pkg_config = ['$PKG_WRAPPER']
 
 [built-in options]
 c_args = ['--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
@@ -274,9 +280,7 @@ EOF
 # ---------- Step 4: 手动 meson setup + ninja ----------
 echo "### 手动执行 meson setup"
 cd "$BUILD_DIR"
-# meson 会把 PKG_CONFIG_PATH 传给 pkg-config，让它读到 iOS 的 glib/zlib/libffi .pc
-export PKG_CONFIG_PATH="$COMBINED_PC"
-export PKG_CONFIG_SYSROOT_DIR="$SDK"
+# wrapper 自带 PKG_CONFIG_PATH，无需 export
 "$MESON" setup --reconfigure --cross-file "$CF" --backend ninja . "$QEMU_SRC"
 "$NINJA" -C . -j"$(sysctl -n hw.ncpu)"
 
