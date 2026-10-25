@@ -37,8 +37,14 @@ jobs:
       - name: build aarch64 virt kernel
         run: |
           set -e
-          echo "### 拉取 Linux kernel（固定版本，见 Kernel/VERSIONS.txt）"
-          git clone --depth 1 -b v6.1.121 https://github.com/torvalds/linux.git linux
+          echo "### 下载 Linux kernel tarball（kernel.org CDN，v6.1.121 stable）"
+          KERNEL_VER="6.1.121"
+          cd "$GITHUB_WORKSPACE"
+          curl -sSL --retry 3 -o linux.tar.xz "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-${KERNEL_VER}.tar.xz"
+          mkdir -p linux
+          tar -xJf linux.tar.xz -C linux --strip-components=1
+          rm -f linux.tar.xz
+          echo "### 编译 aarch64 virt 内核"
           KERNEL_SRC=linux OUT="$PWD/build/kernel" JOBS="$(nproc)" bash Kernel/build-kernel.sh
           echo "### Kernel 产物"
           ls -la "$PWD/build/kernel/Image"
