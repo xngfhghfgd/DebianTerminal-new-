@@ -83,10 +83,20 @@ GLIB_PC_DIR="$GLIB_OUT/prefix/lib/pkgconfig"
 echo "### glib for iOS 构建完成: $GLIB_OUT"
 ls -la "$GLIB_PC_DIR" | head -5 || true
 
-# 让 pkg-config 找到 glib 的 .pc 文件（host 端 glib 会干扰，指定优先搜索路径）
-PKG_CONFIG_PATH="${PKG_CONFIG_PATH:-}"
-export PKG_CONFIG_PATH="$GLIB_PC_DIR:$PKG_CONFIG_PATH"
+# 让 pkg-config 找到 glib 的 .pc 文件（host 端 glib 会干扰，用包装脚本固化搜索路径）
+export PKG_CONFIG_PATH="$GLIB_PC_DIR"
 export PKG_CONFIG_SYSROOT_DIR="$SDK"
+
+# 生成 pkg-config 包装脚本（固化 PKG_CONFIG_PATH，meson 交叉文件只接受可执行文件路径）
+PKG_WRAPPER="$GLIB_OUT/pkg-config-ios"
+cat > "$PKG_WRAPPER" <<WRAP
+#!/bin/sh
+# 仅搜索 iOS glib 的 .pc 文件（避免 host 端 glib 干扰）
+export PKG_CONFIG_PATH="${GLIB_PC_DIR}"
+exec pkg-config "$@"
+WRAP
+chmod +x "$PKG_WRAPPER"
+echo "### pkg-config 包装脚本: $PKG_WRAPPER"
 
 cd "$QEMU_SRC"
 
@@ -140,7 +150,7 @@ objc = [$CC_QUOTED, '--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
 objcpp = [$CXX_QUOTED, '--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
 ar = ['ar']
 strip = ['strip']
-pkg_config = ['PKG_CONFIG_PATH=${GLIB_PC_DIR} pkg-config']
+pkg_config = ['$PKG_WRAPPER']
 
 [built-in options]
 c_args = ['--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
