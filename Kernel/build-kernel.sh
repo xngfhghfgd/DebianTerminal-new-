@@ -22,9 +22,9 @@ cd "$KERNEL_SRC"
 
 # 1) 生成基础 defconfig（virt_defconfig 缺失则回退 defconfig）
 if [[ -f "arch/arm64/configs/${DEFCONFIG}" ]]; then
-  make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- "${DEFCONFIG}_defconfig"
+  make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- "${DEFCONFIG}"
 else
-  echo "  [warn] ${DEFCONFIG}_defconfig 不存在，回退 defconfig"
+  echo "  [warn] ${DEFCONFIG} 不存在，回退 defconfig"
   make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
 fi
 
