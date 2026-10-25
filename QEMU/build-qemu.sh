@@ -70,8 +70,7 @@ NINJA="$VENV/bin/ninja"
   --cross-file "$GLIB_OUT/meson-ios-cross.txt" \
   -D prefix="$GLIB_OUT/prefix" \
   -D libdir=lib \
-  -D static=true \
-  -D shared=false \
+  -D default_library=static \
   -D man=false \
   -D tests=false \
   -D valgrind=false \
