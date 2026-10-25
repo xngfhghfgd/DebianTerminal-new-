@@ -50,9 +50,10 @@ jobs:
           set -e
           echo "### 拉取 QEMU 源码（固定版本，见 QEMU/VERSIONS.txt）"
           QEMU_VERSION="v9.2.0"   # 基线；如需 UTM 同源 10.x 可改
-          git clone --depth 1 --branch "$QEMU_VERSION" https://github.com/qemu/qemu.git qemu
+          rm -rf qemu-src
+          git clone --depth 1 --branch "$QEMU_VERSION" https://github.com/qemu/qemu.git qemu-src
           echo "### 交叉编译 QEMU 到 iOS arm64"
-          OUT="$PWD/build/qemu-ios" QEMU_SRC="$PWD/qemu" bash QEMU/build-qemu.sh
+          OUT="$PWD/build/qemu-ios" QEMU_SRC="$PWD/qemu-src" bash QEMU/build-qemu.sh
           echo "### QEMU 产物"
           ls -la "$PWD/build/qemu-ios/bin" 2>/dev/null || echo "  (静态库模式，见 build 日志)"
           # 成功标志
