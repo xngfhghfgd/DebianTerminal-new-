@@ -152,7 +152,7 @@ final class VMManager: @unchecked Sendable {
                            stdoutFD: Int32,
                            stdinFD: Int32) throws -> pid_t {
         // iOS: posix_spawn_file_actions_t 导入为 UnsafeMutableRawPointer
-        guard let spawnPtr = UnsafeMutablePointer<posix_spawn_file_actions_t?>.allocate(capacity: 1) else {
+        guard let spawnPtr = UnsafeMutablePointer<posix_spawn_file_actions_t>.allocate(capacity: 1) else {
             throw VMError.ioError("内存分配失败")
         }
         posix_spawn_file_actions_init(spawnPtr)
