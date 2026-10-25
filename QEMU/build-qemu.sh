@@ -232,9 +232,10 @@ src = src.replace('struct statfs buf;', 'struct statvfs buf;')
 # 替换 fstatfs 调用 -> f_statvfs，并调整字段名
 src = src.replace('if (!fstatfs(s->fd, &buf)) {', 'if (f_statvfs(s->fd, &buf) == 0) {')
 # statfs 的字段 f_blocks/f_bfree 与 statvfs 相同（POSIX），无需改动
-# 确保包含 statvfs
-if '#include <sys/statvfs.h>' not in src:
-    src = src.replace('#include <sys/stat.h>', '#include <sys/stat.h>\n#include <sys/statvfs.h>', 1)
+# 确保包含 statvfs（macOS 在 sys/mount.h，POSIX 在 sys/statvfs.h）
+if '#include <sys/statvfs.h>' not in src and 'f_statvfs' in src:
+    # macOS/iOS: f_statvfs 在 sys/mount.h；Linux 在 sys/statvfs.h
+    src = src.replace('#include <sys/stat.h>', '#include <sys/stat.h>\n#include <sys/mount.h>\n#include <sys/statvfs.h>', 1)
 open(path, 'w').write(src)
 print("### file-posix.c 已修补：fstatfs -> f_statvfs (iOS/macOS)")
 PYFIX
