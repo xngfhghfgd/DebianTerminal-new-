@@ -345,7 +345,15 @@ echo "### pkg-config --cflags glib-2.0:"
 PKG_CONFIG_PATH="$COMBINED_PC" pkg-config --cflags glib-2.0 2>&1 || echo "  (pkg-config 解析失败)"
 echo "### pkg-config --libs glib-2.0:"
 PKG_CONFIG_PATH="$COMBINED_PC" pkg-config --libs glib-2.0 2>&1 || echo "  (pkg-config 解析失败)"
-"$MESON" setup --reconfigure --cross-file "$CF" --backend ninja . "$QEMU_SRC"
+"$MESON" setup --reconfigure --cross-file "$CF" --backend ninja . "$QEMU_SRC" \
+  -Dcurl=disabled \
+  -Dslirp=disabled \
+  -Dbrpc=disabled \
+  -Dcapstone=disabled \
+  -Dnuma=disabled \
+  -Dvnc=disabled \
+  -Dgtk=disabled \
+  -Dsdl=disabled
 "$NINJA" -C . -j"$(sysctl -n hw.ncpu)"
 
 echo "### 安装产物到 $OUT"
