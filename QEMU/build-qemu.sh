@@ -358,11 +358,9 @@ PKG_CONFIG_PATH="$COMBINED_PC" pkg-config --libs glib-2.0 2>&1 || echo "  (pkg-c
   -Dvde=disabled \
   -Dgnutls=disabled \
   -Dpixman=disabled \
-  -Dlibpng=disabled \
   -Dlibusb=disabled \
   -Dzstd=disabled \
   -Dlzo=disabled \
-  -Dlzma=disabled \
   -Dopenssl=disabled
 "$NINJA" -C . -j"$(sysctl -n hw.ncpu)"
 
