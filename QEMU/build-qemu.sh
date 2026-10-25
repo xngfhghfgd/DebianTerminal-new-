@@ -239,6 +239,7 @@ echo "### 生成 meson 交叉文件: $CF"
 CC_QUOTED="'$CC_BIN'"
 CXX_QUOTED="'$CXX_BIN'"
 # 生成 wrapper：宿主端 pkg-config + PKG_CONFIG_PATH 指向 iOS 的 .pc（含 glib/zlib/libffi/pcre2）
+PKG_WRAPPER="$GLIB_OUT/pkg-config-qemu"
 cat > "$PKG_WRAPPER" <<WRAP
 #!/bin/sh
 # host 端 pkg-config，只搜索 iOS 库的 .pc（QEMU 构建期）
@@ -276,6 +277,7 @@ cpu_family = 'aarch64'
 cpu = 'aarch64'
 endian = 'little'
 EOF
+echo "### meson 交叉文件已生成（pkg_config -> $PKG_WRAPPER）"
 
 # ---------- Step 4: 手动 meson setup + ninja ----------
 echo "### 手动执行 meson setup"
