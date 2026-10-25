@@ -151,14 +151,21 @@ final class VMManager: @unchecked Sendable {
                            args: [String],
                            stdoutFD: Int32,
                            stdinFD: Int32) throws -> pid_t {
-        var spawn: posix_spawn_file_actions_t = .init()
-        posix_spawn_file_actions_init(&spawn)
+        // iOS: posix_spawn_file_actions_t 导入为 UnsafeMutableRawPointer
+        guard let spawnPtr = UnsafeMutablePointer<posix_spawn_file_actions_t?>.allocate(capacity: 1) else {
+            throw VMError.ioError("内存分配失败")
+        }
+        posix_spawn_file_actions_init(spawnPtr)
+        defer {
+            posix_spawn_file_actions_destroy(spawnPtr)
+            spawnPtr.deallocate()
+        }
         // 关闭子进程 stderr（POC 简化，避免挂起）
-        posix_spawn_file_actions_addclose(&spawn, 2)
+        posix_spawn_file_actions_addclose(spawnPtr, 2)
         // stdout -> stdoutFD
-        posix_spawn_file_actions_adddup2(&spawn, stdoutFD, 1)
+        posix_spawn_file_actions_adddup2(spawnPtr, stdoutFD, 1)
         // stdin <- stdinFD
-        posix_spawn_file_actions_adddup2(&spawn, stdinFD, 0)
+        posix_spawn_file_actions_adddup2(spawnPtr, stdinFD, 0)
 
         var pid: pid_t = 0
         // 构造 argv：以 NUL 结尾的 C 字符串数组
@@ -166,20 +173,19 @@ final class VMManager: @unchecked Sendable {
         defer { cArgs.forEach { if let p = $0 { free(p) } } }
         var argv = cArgs + [nil]
 
-        // posix_spawn 的 path 需要 UnsafePointer<CChar>
-        let ret = qemuPath.withCString { pathPtr in
-            withUnsafeMutablePointer(to: &pid) { pidPtr in
-                withUnsafeMutablePointer(to: &argv) { argvPtr in
+        // posix_spawn 的 path/argv/env 均需要 UnsafePointer，逐层桥接
+        let ret = qemuPath.withCString { pathPtr -> Int32 in
+            withUnsafeMutablePointer(to: &pid) { pidPtr -> Int32 in
+                withUnsafeMutablePointer(to: &argv) { argvPtr -> Int32 in
                     argvPtr.withMemoryRebound(
                         to: UnsafeMutablePointer<CChar>?.self,
                         capacity: argv.count
                     ) { basePtr in
-                        posix_spawn(pidPtr, pathPtr, &spawn, nil, basePtr, environ)
+                        posix_spawn(pidPtr, pathPtr, spawnPtr, nil, basePtr, environ)
                     }
                 }
             }
         }
-        posix_spawn_file_actions_destroy(&spawn)
 
         guard ret == 0 else { throw VMError.spawnFailed }
         return pid
