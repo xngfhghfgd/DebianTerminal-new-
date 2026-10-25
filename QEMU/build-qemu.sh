@@ -20,14 +20,21 @@ CXX_BIN="$(xcrun --find clang++)"
 
 cd "$QEMU_SRC"
 
-# 优先使用 python@3.12（QEMU 对 3.14 的 distlib/venv 检测不可靠）
-if command -v python3.12 >/dev/null 2>&1; then
-  export PYTHON="$(brew --prefix)/opt/python@3.12/bin/python3.12"
+# QEMU v9.2.0 需要 Python 3.9–3.12；macOS 15 runner 的 homebrew python3 是 3.14，
+# 创建 venv 时报 "found no usable distlib"。
+# 最稳妥：用 /usr/bin/python3（系统 3.9/3.13，自带 distlib），并预装构建依赖。
+if command -v /usr/bin/python3 >/dev/null 2>&1; then
+  PY=/usr/bin/python3
+else
+  PY="$(command -v python3)"
 fi
+echo "### 使用系统 Python: $PY ($($PY --version 2>&1))"
+# 预装 distlib / virtualenv（系统 Python 可能需要 apt 风格补装；失败则继续）
+"$PY" -m pip install --quiet distlib virtualenv 2>/dev/null || \
+  "$PY" -m ensurepip --upgrade 2>/dev/null || true
+export PYTHON="$PY"
 
-# 预装 QEMU 构建所需的 Python 依赖到指定解释器（避免 venv 创建时缺 distlib）
-"$PYTHON" -m pip install --quiet distlib meson ninja pyyaml 2>/dev/null || true
-# 让 QEMU 使用已有依赖而非重建隔离 venv（--python 指向已装好依赖的解释器）
+# 让 QEMU 使用已装好依赖的解释器（--python 指向它，避免重建隔离 venv）
 echo "### QEMU configure（iOS arm64 交叉编译）"
 CC="${CC_BIN} --sysroot=${SDK} --target=arm64-apple-ios17.0" \
 CXX="${CXX_BIN} --sysroot=${SDK} --target=arm64-apple-ios17.0" \
