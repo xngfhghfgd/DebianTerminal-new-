@@ -1,8 +1,10 @@
 name: Build iOS (macOS Runner)
 
 # 云端构建：无 Mac 用户也能获得构建产物。
-# 阶段：checkout → validate env → build QEMU → prepare Kernel →
-#       prepare Debian → build iOS app → test → package → upload
+# 阶段拆分（macos runner 无 docker，内核需在 ubuntu runner 原生编译）：
+#   kernel-debian (ubuntu-latest): aarch64 内核 + Debian 12 镜像 → artifact
+#   build (macos-15): QEMU iOS 交叉编译 + 组装 app + 未签名 IPA
+#   依赖：kernel-debian 的产物供 build 下载
 
 on:
   push:
@@ -14,9 +16,59 @@ permissions:
   contents: read
 
 jobs:
+  # ---------- Job 1: aarch64 内核 + Debian 镜像（ubuntu 原生，无 docker） ----------
+  kernel-debian:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: install build tools
+        run: |
+          set -e
+          echo "### 安装 aarch64 交叉工具链 + qemu-utils"
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu make qemu-utils curl xz-utils
+
+      - name: build aarch64 virt kernel
+        run: |
+          set -e
+          echo "### 拉取 Linux kernel（固定版本，见 Kernel/VERSIONS.txt）"
+          git clone --depth 1 -b v6.1.121 https://github.com/torvalds/linux.git linux
+          KERNEL_SRC=linux OUT="$PWD/build/kernel" JOBS="$(nproc)" bash Kernel/build-kernel.sh
+          echo "### Kernel 产物"
+          ls -la "$PWD/build/kernel/Image"
+          test -f "$PWD/build/kernel/Image"
+
+      - name: prepare Debian 12 arm64 image
+        run: |
+          set -e
+          echo "### 准备 Debian 12 arm64 镜像（qcow2 → raw）"
+          RAW_BASE=debian-12-genericcloud-arm64.qcow2 OUT="$PWD/build/debian12.img" SIZE_MB=4096 \
+            bash Scripts/prepare-debian.sh || echo "  (离线/无 qcow2，debian12.img 未生成)"
+          ls -la "$PWD/build/debian12.img" 2>/dev/null || echo "  debian12.img 未生成，CI 继续"
+
+      - name: upload kernel + debian
+        uses: actions/upload-artifact@v4
+        with:
+          name: guest-assets
+          path: |
+            build/kernel/Image
+            build/debian12.img
+          if-no-files-found: warn
+
+  # ---------- Job 2: QEMU iOS 交叉编译 + 未签名 IPA（macos runner） ----------
   build:
     runs-on: macos-15
     timeout-minutes: 90
+    needs: kernel-debian
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: checkout
@@ -41,62 +93,32 @@ jobs:
       - name: prepare dependencies
         run: |
           set -e
-          # 交叉编译工具链（aarch64 内核构建用）
           brew install nasm 2>/dev/null || true
-          # QEMU configure 需要 Python 3.9–3.12；macOS 15 runner 默认 3.14 缺 distlib，
-          # 显式指定 3.12 避免 "found no usable distlib" 报错。
           brew install python@3.12 2>/dev/null || true
-          # brew 的 python@3.12 venv 缺 distlib，显式安装供 QEMU 创建 venv 使用
           "$(brew --prefix)/opt/python@3.12/bin/python3.12" -m pip install distlib 2>/dev/null || true
           echo "deps ready"
+
+      - name: download kernel + debian assets
+        uses: actions/download-artifact@v4
+        with:
+          name: guest-assets
+          path: build/guest-assets
 
       - name: build QEMU (iOS arm64, TCG + TCTI)
         run: |
           set -e
-          # 强制用 python@3.12（避免 3.14 缺 distlib）
           P312="$(brew --prefix)/opt/python@3.12/bin/python3.12"
           command -v "$P312" >/dev/null 2>&1 || P312="$(command -v python3.12 || true)"
           echo "python for QEMU: $P312"
           echo "### 拉取 QEMU 源码（固定版本，见 QEMU/VERSIONS.txt）"
-          QEMU_VERSION="v9.2.0"   # 基线；如需 UTM 同源 10.x 可改
+          QEMU_VERSION="v9.2.0"
           rm -rf qemu-src
           git clone --depth 1 --branch "$QEMU_VERSION" https://github.com/qemu/qemu.git qemu-src
           echo "### 交叉编译 QEMU 到 iOS arm64"
           OUT="$PWD/build/qemu-ios" QEMU_SRC="$PWD/qemu-src" PYTHON="$P312" bash QEMU/build-qemu.sh
           echo "### QEMU 产物"
           ls -la "$PWD/build/qemu-ios/bin" 2>/dev/null || echo "  (静态库模式，见 build 日志)"
-          # 成功标志
           test -d "$PWD/build/qemu-ios"
-
-      - name: prepare Kernel
-        run: |
-          set -e
-          echo "### 拉取 Linux kernel（固定版本，见 Kernel/VERSIONS.txt）"
-          # 使用 aarch64 容器构建，避免 macOS 交叉工具链差异
-          docker run --rm -v "$PWD:/w" -w /w ubuntu:24.04 bash -lc '
-            set -e
-            apt-get update && apt-get install -y gcc-aarch64-linux-gnu make
-            git clone --depth 1 -b v6.1.121 https://github.com/torvalds/linux.git linux
-            KERNEL_SRC=linux OUT=$PWD/build/kernel JOBS=4 bash Kernel/build-kernel.sh
-          '
-          echo "### Kernel 产物"
-          ls -la "$PWD/build/kernel/Image"
-          test -f "$PWD/build/kernel/Image"
-
-      - name: prepare Debian assets
-        run: |
-          set -e
-          echo "### 准备 Debian 12 arm64 镜像（qcow2 → raw）"
-          # 容器内构建以保证 qemu-img 与网络稳定
-          docker run --rm -v "$PWD:/w" -w /w ubuntu:24.04 bash -lc '
-            set -e
-            apt-get update && apt-get install -y qemu-utils curl
-            # 下载 genericcloud qcow2（若网络允许）
-            URL="https://cdimage.debian.org/cdimage/cloud/12/latest/debian-12-genericcloud-arm64.qcow2"
-            RAW_BASE=debian-12-genericcloud-arm64.qcow2 OUT=$PWD/build/debian12.img SIZE_MB=4096 \
-              bash Scripts/prepare-debian.sh || echo "  (离线跳过，需在联网环境运行)"
-          '
-          ls -la "$PWD/build/debian12.img" 2>/dev/null || echo "  debian12.img 未生成（离线），CI 继续"
 
       - name: build iOS app
         run: |
@@ -107,11 +129,11 @@ jobs:
           # QEMU 产物统一为 build/qemu-ios/bin/qemu-system-aarch64-ios（build-qemu.sh 生成）
           cp -f "$PWD/build/qemu-ios/bin/qemu-system-aarch64-ios" "$RES/qemu-system-aarch64" 2>/dev/null || \
             echo "  QEMU 静态库模式：产物为 .a，链接进 App"
-          cp -f "$PWD/build/kernel/Image" "$RES/Image" 2>/dev/null || true
-          cp -f "$PWD/build/debian12.img" "$RES/debian12.img" 2>/dev/null || true
+          # 内核与 Debian 镜像来自 kernel-debian job（download-artifact 到 build/guest-assets/）
+          cp -f "$PWD/build/guest-assets/Image" "$RES/Image" 2>/dev/null || echo "  Image 未随附（kernel-debian job 未产出）"
+          cp -f "$PWD/build/guest-assets/debian12.img" "$RES/debian12.img" 2>/dev/null || echo "  debian12.img 未随附"
 
           echo "### xcodebuild 编译（未签名）"
-          # xcodegen 生成可复现工程（避免手写 UUID）
           brew install xcodegen 2>/dev/null || true
           command -v xcodegen >/dev/null 2>&1 && xcodegen generate
           xcodebuild \
@@ -141,11 +163,9 @@ jobs:
           PKG="$PWD/build/DebianTerminal-unsigned.pkg"
           IPADIR="$PWD/build/DebianTerminal.ipa"
 
-          # 未签名 IPA（zip 形式 .app）
           rm -rf "$IPADIR"; mkdir -p "$IPADIR/Payload"
           cp -R "$APP" "$IPADIR/Payload/"
           zip -qry "$PWD/build/DebianTerminal-unsigned.ipa" "$IPADIR"
-          # 未签名 PKG（payload 目录，留待本地签名/打包）
           rm -rf "$PKG"; mkdir -p "$PKG"
           echo "### 产物（未签名）"
           ls -la "$PWD/build"
