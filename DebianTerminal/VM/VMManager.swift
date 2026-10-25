@@ -147,25 +147,23 @@ final class VMManager: @unchecked Sendable {
     /// - 参数：qemuPath（绝对路径）、args（含可执行文件在首元素）、
     ///   stdoutFD（子进程 stdout 重定向的 fd）、stdinFD（子进程 stdin 重定向的 fd）。
     /// - 返回子进程 pid；失败抛 `VMError.spawnFailed`。
+    /// 用 `posix_spawn` 启动 QEMU 进程。
+    /// - 参数：qemuPath（绝对路径）、args（含可执行文件在首元素）、
+    ///   stdoutFD（子进程 stdout 重定向的 fd）、stdinFD（子进程 stdin 重定向的 fd）。
+    /// - 返回子进程 pid；失败抛 `VMError.spawnFailed`。
     private func spawnQEMU(qemuPath: String,
                            args: [String],
                            stdoutFD: Int32,
                            stdinFD: Int32) throws -> pid_t {
-        // iOS: posix_spawn_file_actions_t 导入为 UnsafeMutableRawPointer
-        guard let spawnPtr = posix_spawn_file_actions_t.allocate(capacity: 1) else {
-            throw VMError.ioError("内存分配失败")
-        }
-        posix_spawn_file_actions_init(spawnPtr)
-        defer {
-            posix_spawn_file_actions_destroy(spawnPtr)
-            spawnPtr.deallocate()
-        }
+        // posix_spawn_file_actions_t：栈上创建，逐层桥接为 C 指针
+        var spawn = posix_spawn_file_actions_t()
+        posix_spawn_file_actions_init(&spawn)
         // 关闭子进程 stderr（POC 简化，避免挂起）
-        posix_spawn_file_actions_addclose(spawnPtr, 2)
+        posix_spawn_file_actions_addclose(&spawn, 2)
         // stdout -> stdoutFD
-        posix_spawn_file_actions_adddup2(spawnPtr, stdoutFD, 1)
+        posix_spawn_file_actions_adddup2(&spawn, stdoutFD, 1)
         // stdin <- stdinFD
-        posix_spawn_file_actions_adddup2(spawnPtr, stdinFD, 0)
+        posix_spawn_file_actions_adddup2(&spawn, stdinFD, 0)
 
         var pid: pid_t = 0
         // 构造 argv：以 NUL 结尾的 C 字符串数组
@@ -173,7 +171,7 @@ final class VMManager: @unchecked Sendable {
         defer { cArgs.forEach { if let p = $0 { free(p) } } }
         var argv = cArgs + [nil]
 
-        // posix_spawn 的 path/argv/env 均需要 UnsafePointer，逐层桥接
+        // path/argv/env 均需要 UnsafePointer，逐层桥接
         let ret = qemuPath.withCString { pathPtr -> Int32 in
             withUnsafeMutablePointer(to: &pid) { pidPtr -> Int32 in
                 withUnsafeMutablePointer(to: &argv) { argvPtr -> Int32 in
@@ -181,11 +179,12 @@ final class VMManager: @unchecked Sendable {
                         to: UnsafeMutablePointer<CChar>?.self,
                         capacity: argv.count
                     ) { basePtr in
-                        posix_spawn(pidPtr, pathPtr, spawnPtr, nil, basePtr, environ)
+                        posix_spawn(pidPtr, pathPtr, &spawn, nil, basePtr, environ)
                     }
                 }
             }
         }
+        posix_spawn_file_actions_destroy(&spawn)
 
         guard ret == 0 else { throw VMError.spawnFailed }
         return pid
