@@ -34,7 +34,8 @@ CXX="${CXX_BIN} --sysroot=${SDK} --target=arm64-apple-ios17.0" \
   --disable-curl \
   --disable-spice \
   --disable-pixman \
-  --enable-slirp \
+  --disable-pixman \
+  --disable-slirp \
   --prefix="$OUT" \
   --extra-cflags="--target=arm64-apple-ios17.0 --sysroot=${SDK}" \
   --extra-cxxflags="--target=arm64-apple-ios17.0 --sysroot=${SDK}"
