@@ -216,6 +216,30 @@ if grep -q "pthread_jit_write_protect_np" "$OSDEP" 2>/dev/null; then
   echo "### osdep.h 已修补：pthread_jit_write_protect_np -> noop (iOS)"
 fi
 
+# 修补 QEMU block/file-posix.c：fstatfs/struct statfs 是 glibc/Linux API，
+# 在 macOS/iOS（BSD）上不存在。用 f_statvfs（macOS/iOS 兼容）替换。
+FP="$QEMU_SRC/block/file-posix.c"
+if grep -q "fstatfs" "$FP" 2>/dev/null; then
+  python3 - "$FP" <<'PYFIX'
+import sys
+path = sys.argv[1]
+src = open(path).read()
+if 'fstatfs' not in src:
+    print("WARN: fstatfs not found, skip")
+    sys.exit(0)
+# 替换 struct statfs buf; -> struct statvfs buf;
+src = src.replace('struct statfs buf;', 'struct statvfs buf;')
+# 替换 fstatfs 调用 -> f_statvfs，并调整字段名
+src = src.replace('if (!fstatfs(s->fd, &buf)) {', 'if (f_statvfs(s->fd, &buf) == 0) {')
+# statfs 的字段 f_blocks/f_bfree 与 statvfs 相同（POSIX），无需改动
+# 确保包含 statvfs
+if '#include <sys/statvfs.h>' not in src:
+    src = src.replace('#include <sys/stat.h>', '#include <sys/stat.h>\n#include <sys/statvfs.h>', 1)
+open(path, 'w').write(src)
+print("### file-posix.c 已修补：fstatfs -> f_statvfs (iOS/macOS)")
+PYFIX
+fi
+
 QEMU_CONFIGURE_ARGS=(
   --python="$PYTHON"
   --skip-meson
