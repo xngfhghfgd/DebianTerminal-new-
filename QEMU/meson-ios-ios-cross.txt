@@ -1,0 +1,30 @@
+# Meson 交叉编译：macOS (aarch64 host) -> iOS aarch64
+# 用于 QEMU 的 --meson-cross-file 指定（如果 QEMU 支持该选项）。
+# 若 QEMU 不支持，由 build-qemu.sh 在 configure 后手动增强 config-meson.cross。
+[binaries]
+c = ['clang', '--target=arm64-apple-ios17.0', '--sysroot={{sdk_path}}']
+cpp = ['clang++', '--target=arm64-apple-ios17.0', '--sysroot={{sdk_path}}']
+objc = ['clang', '--target=arm64-apple-ios17.0', '--sysroot={{sdk_path}}']
+objcpp = ['clang++', '--target=arm64-apple-ios17.0', '--sysroot={{sdk_path}}']
+ar = 'ar'
+strip = 'strip'
+
+[built-in options]
+c_args = ['--target=arm64-apple-ios17.0', '--sysroot={{sdk_path}}']
+cpp_args = ['--target=arm64-apple-ios17.0', '--sysroot={{sdk_path}}']
+c_link_args = ['--target=arm64-apple-ios17.0', '--sysroot={{sdk_path}}']
+cpp_link_args = ['--target=arm64-apple-ios17.0', '--sysroot={{sdk_path}}']
+objc_args = ['--target=arm64-apple-ios17.0', '--sysroot={{sdk_path}}']
+objcpp_args = ['--target=arm64-apple-ios17.0', '--sysroot={{sdk_path}}']
+
+[properties]
+can_run_host_bins = false
+root = '{{sdk_path}}'
+
+[host_machine]
+system = 'darwin'
+subsystem = 'ios'
+kernel = 'xnu'
+cpu_family = 'aarch64'
+cpu = 'aarch64'
+endian = 'little'
