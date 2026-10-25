@@ -355,7 +355,22 @@ PKG_CONFIG_PATH="$COMBINED_PC" pkg-config --libs glib-2.0 2>&1 || echo "  (pkg-c
   -Ddbus_display=disabled \
   -Dspice=disabled \
   -Dspice_protocol=disabled \
-  -Dvde=disabled
+  -Dvde=disabled \
+  -Dgnutls=disabled \
+  -Dtls=disabled \
+  -Dpixman=disabled \
+  -Dlibpng=disabled \
+  -Dlibusb=disabled \
+  -Dzstd=disabled \
+  -Dlibz=disabled \
+  -Dlzo=disabled \
+  -Dlzma=disabled \
+  -Dbzlib=disabled \
+  -Dopenssl=disabled \
+  -Dkeycodemapdb=disabled \
+  -Dnettle=disabled \
+  -Dlibudev=disabled \
+  -Dcapstone=disabled
 "$NINJA" -C . -j"$(sysctl -n hw.ncpu)"
 
 echo "### 安装产物到 $OUT"
