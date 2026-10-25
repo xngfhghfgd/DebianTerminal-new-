@@ -49,10 +49,12 @@ mkdir -p "$IOS_PC_DIR"
 
 # --- zlib (CMake) ---
 if [[ ! -d "$ZLIB_SRC" ]]; then
-  curl -sSL -o zlib.tar.gz "https://zlib.net/zlib-1.3.1.tar.gz"
+  curl -sSL --retry 3 -o zlib.tar.gz "https://zlib.net/fossil.cgi?zlib-1.3.1.tar.gz" || \
+    curl -sSL --retry 3 -o zlib.tar.gz "https://github.com/madler/zlib/releases/download/v1.3.1/zlib.tar.gz"
   tar xf zlib.tar.gz
-  rm zlib.tar.gz
-  mv zlib-1.3.1 "$ZLIB_SRC"
+  rm -f zlib.tar.gz
+  # 解压出的顶层目录可能是 zlib-1.3.1 或 zlib
+  if [[ -d "zlib-1.3.1" ]]; then mv zlib-1.3.1 "$ZLIB_SRC"; else mv zlib "$ZLIB_SRC"; fi
 fi
 cmake -S "$ZLIB_SRC" -B "$GLIB_OUT/zlib-build" -G Ninja \
   -DCMAKE_SYSTEM_NAME=Darwin \
@@ -70,35 +72,22 @@ echo "### zlib for iOS 完成: $GLIB_OUT/zlib-prefix"
 
 # --- libffi (autoconf) ---
 if [[ ! -d "$LIBFFI_SRC" ]]; then
-  curl -sSL -o libffi.tar.gz "https://github.com/libffi/libffi/releases/download/v${LIBFFI_VERSION}/libffi-${LIBFFI_VERSION}.tar.gz"
+  curl -sSL --retry 3 -L -o libffi.tar.gz "https://github.com/libffi/libffi/releases/download/v${LIBFFI_VERSION}/libffi-${LIBFFI_VERSION}.tar.gz"
   tar xf libffi.tar.gz
-  rm libffi.tar.gz
-  mv "libffi-${LIBFFI_VERSION}" "$LIBFFI_SRC"
+  rm -f libffi.tar.gz
+  # 解压出的顶层目录可能是 libffi-3.4.7 或 libffi
+  if [[ -d "libffi-${LIBFFI_VERSION}" ]]; then mv "libffi-${LIBFFI_VERSION}" "$LIBFFI_SRC"; else mv libffi "$LIBFFI_SRC"; fi
 fi
 mkdir -p "$GLIB_OUT/libffi-build"
-CC="$CC_BIN" CXX="$CXX_BIN" "$LIBFFI_SRC/configure" \
-  --host=aarch64-apple-ios \
-  --build=aarch64-apple-darwin \
-  --prefix="$GLIB_OUT/libffi-prefix" \
-  --disable-docs \
-  --enable-shared=no \
-  --enable-static \
-  CFLAGS="$IOS_TARGET" \
-  LDFLAGS="$IOS_TARGET" \
-  -C "$GLIB_OUT/libffi-build" >/dev/null || {
-  # 若 VPATH 构建不支持，退化为 in-tree
-  cd "$LIBFFI_SRC"
-  CC="$CC_BIN" CXX="$CXX_BIN" ./configure \
+( cd "$LIBFFI_SRC" \
+  && CC="$CC_BIN" CXX="$CXX_BIN" ./configure \
     --host=aarch64-apple-ios \
     --prefix="$GLIB_OUT/libffi-prefix" \
     --disable-docs \
     --enable-shared=no --enable-static \
-    CFLAGS="$IOS_TARGET" LDFLAGS="$IOS_TARGET"
-}
-make -C "$GLIB_OUT/libffi-build" -j"$(sysctl -n hw.ncpu)" 2>/dev/null || \
-  { cd "$LIBFFI_SRC" && make -j"$(sysctl -n hw.ncpu)"; }
-make -C "$GLIB_OUT/libffi-build" install 2>/dev/null || \
-  { cd "$LIBFFI_SRC" && make install; }
+    CFLAGS="$IOS_TARGET" LDFLAGS="$IOS_TARGET" \
+  && make -j"$(sysctl -n hw.ncpu)" \
+  && make install )
 echo "### libffi for iOS 完成: $GLIB_OUT/libffi-prefix"
 
 # 生成 zlib + libffi 的 .pc 文件（集中放入 iOS .pc 目录）
