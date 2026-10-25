@@ -43,11 +43,16 @@ jobs:
           set -e
           # 交叉编译工具链（aarch64 内核构建用）
           brew install nasm 2>/dev/null || true
+          # QEMU configure 需要 Python 3.9–3.12；macOS 15 runner 默认 3.14 缺 distlib，
+          # 显式指定 3.12 避免 "found no usable distlib" 报错。
+          brew install python@3.12 2>/dev/null || true
           echo "deps ready"
 
       - name: build QEMU (iOS arm64, TCG + TCTI)
         run: |
           set -e
+          # 强制用 python@3.12（避免 3.14 缺 distlib）
+          export PATH="$(brew --prefix)/opt/python@3.12/bin:$PATH"
           echo "### 拉取 QEMU 源码（固定版本，见 QEMU/VERSIONS.txt）"
           QEMU_VERSION="v9.2.0"   # 基线；如需 UTM 同源 10.x 可改
           rm -rf qemu-src

@@ -20,6 +20,10 @@ CXX_BIN="$(xcrun --find clang++)"
 
 cd "$QEMU_SRC"
 
+# 优先使用 python@3.12（QEMU 对 3.14 的 distlib 检测不可靠）
+if command -v python3.12 >/dev/null 2>&1; then
+  export PYTHON="$(brew --prefix)/opt/python@3.12/bin/python3.12"
+fi
 echo "### QEMU configure（iOS arm64 交叉编译）"
 CC="${CC_BIN} --sysroot=${SDK} --target=arm64-apple-ios17.0" \
 CXX="${CXX_BIN} --sysroot=${SDK} --target=arm64-apple-ios17.0" \
@@ -33,7 +37,6 @@ CXX="${CXX_BIN} --sysroot=${SDK} --target=arm64-apple-ios17.0" \
   --disable-vnc \
   --disable-curl \
   --disable-spice \
-  --disable-pixman \
   --disable-pixman \
   --disable-slirp \
   --prefix="$OUT" \
