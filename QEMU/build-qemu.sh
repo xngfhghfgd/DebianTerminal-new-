@@ -67,13 +67,16 @@ BUILD_DIR="$PWD/build"
 mkdir -p "$BUILD_DIR"
 CF="$BUILD_DIR/config-meson.cross"
 echo "### 生成 meson 交叉文件: $CF"
+# meson 交叉文件的 binaries 需要带引号的路径；用 printf 预生成避免 bash 扩展问题
+CC_QUOTED="'$CC_BIN'"
+CXX_QUOTED="'$CXX_BIN'"
 cat > "$CF" <<EOF
 # 自动生成：DebianTerminal iOS aarch64 交叉编译（macOS host -> iOS）
 [binaries]
-c = [${CC_BIN@Q}, '--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
-cpp = [${CXX_BIN@Q}, '--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
-objc = [${CC_BIN@Q}, '--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
-objcpp = [${CXX_BIN@Q}, '--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
+c = [$CC_QUOTED, '--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
+cpp = [$CXX_QUOTED, '--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
+objc = [$CC_QUOTED, '--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
+objcpp = [$CXX_QUOTED, '--target=arm64-apple-ios17.0', '--sysroot=${SDK}']
 ar = ['ar']
 strip = ['strip']
 
