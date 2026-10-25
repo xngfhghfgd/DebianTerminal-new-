@@ -64,9 +64,10 @@ cmake -S "$ZLIB_SRC" -B "$GLIB_OUT/zlib-build" -G Ninja \
   -DCMAKE_C_FLAGS="$IOS_TARGET" \
   -DCMAKE_CXX_FLAGS="$IOS_TARGET" \
   -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX="$GLIB_OUT/zlib-prefix" \
   -DZLIB_STATIC=ON -DZLIB_ENABLE_TESTS=OFF -DMINIZIP=OFF
 cmake --build "$GLIB_OUT/zlib-build" -j"$(sysctl -n hw.ncpu)"
-cmake --install "$GLIB_OUT/zlib-build" --prefix "$GLIB_OUT/zlib-prefix"
+cmake --install "$GLIB_OUT/zlib-build"
 echo "### zlib for iOS 完成: $GLIB_OUT/zlib-prefix"
 
 # --- libffi (autoconf) ---
