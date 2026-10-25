@@ -25,10 +25,12 @@ cd "$QEMU_SRC"
 # 策略：brew 装 python@3.12，pip 装 tomli，--python 指向它。
 PY="$(brew --prefix)/opt/python@3.12/bin/python3.12"
 echo "### 使用 Python: $PY ($($PY --version 2>&1))"
-# 预装 tomli（Python 3.12 没有内置 tomllib 的可选回退需要它）+ distlib
-"$PY" -m ensurepip --upgrade 2>/dev/null || true
-"$PY" -m pip install --quiet tomli distlib
-export PYTHON="$PY"
+# brew python 是 externally-managed（PEP 668）；创建独立 venv 装构建依赖
+VENV="$PWD/.qemu-pyvenv"
+rm -rf "$VENV"
+"$PY" -m venv "$VENV"
+"$VENV/bin/python" -m pip install --quiet tomli distlib
+export PYTHON="$VENV/bin/python"
 
 # 让 QEMU 使用已装好依赖的解释器（--python 指向它，避免重建隔离 venv）
 echo "### QEMU configure（iOS arm64 交叉编译）"
