@@ -49,8 +49,7 @@ mkdir -p "$IOS_PC_DIR"
 
 # --- zlib (CMake) ---
 if [[ ! -d "$ZLIB_SRC" ]]; then
-  curl -sSL --retry 3 -o zlib.tar.gz "https://zlib.net/fossil.cgi?zlib-1.3.1.tar.gz" || \
-    curl -sSL --retry 3 -o zlib.tar.gz "https://github.com/madler/zlib/releases/download/v1.3.1/zlib.tar.gz"
+  curl -sSL --retry 3 -o zlib.tar.gz "https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz"
   tar xf zlib.tar.gz
   rm -f zlib.tar.gz
   # 解压出的顶层目录可能是 zlib-1.3.1 或 zlib
