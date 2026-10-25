@@ -345,23 +345,24 @@ echo "### pkg-config --cflags glib-2.0:"
 PKG_CONFIG_PATH="$COMBINED_PC" pkg-config --cflags glib-2.0 2>&1 || echo "  (pkg-config 解析失败)"
 echo "### pkg-config --libs glib-2.0:"
 PKG_CONFIG_PATH="$COMBINED_PC" pkg-config --libs glib-2.0 2>&1 || echo "  (pkg-config 解析失败)"
-"$MESON" setup --reconfigure --cross-file "$CF" --backend ninja . "$QEMU_SRC" \
-  -Dcurl=disabled \
-  -Dslirp=disabled \
-  -Dvnc=disabled \
-  -Dgtk=disabled \
-  -Dsdl=disabled \
-  -Dcoreaudio=disabled \
-  -Ddbus_display=disabled \
-  -Dspice=disabled \
-  -Dspice_protocol=disabled \
-  -Dvde=disabled \
-  -Dgnutls=disabled \
-  -Dpixman=disabled \
-  -Dlibpng=disabled \
-  -Dlibusb=disabled \
-  -Dzstd=disabled \
-  -Dlzo=disabled
+# ---------- Step 3b: 禁用 QEMU 中会拉入 macOS host dylib 的依赖 ----------
+# QEMU meson 在交叉构建时仍会通过 cmake/pkg-config 找到 homebrew 的
+# macOS dylib（gnutls/zstd/gcrypt/png/pixman/libusb/nettle），导致 iOS 链接失败。
+# 通过 -D 选项逐个禁用。选项名已对照 QEMU 9.2 meson_options.txt 校验：
+#   有效 feature 名：gcrypt（非 libgcrypt）、png（非 libpng）、numa（非 numan）等
+MESON_OPT_DISABLES=()
+for opt in \
+  curl slirp vnc vnc_jpeg vnc_sasl gtk gtk_clipboard sdl sdl_image \
+  coreaudio dbus_display spice spice_protocol vde \
+  gnutls nettle gcrypt crypto_afalg libssh libudev \
+  pixman png libusb zstd lzo lzfse snappy \
+  cocoa opengl glusterfs libnfs libiscsi rbd mpath numa \
+  seccomp smartcard usb_redir netmap virglrenderer \
+  ; do
+  MESON_OPT_DISABLES+=("-D${opt}=disabled")
+done
+
+"$MESON" setup --reconfigure --cross-file "$CF" --backend ninja . "$QEMU_SRC" "${MESON_OPT_DISABLES[@]}"
 "$NINJA" -C . -j"$(sysctl -n hw.ncpu)"
 
 echo "### 安装产物到 $OUT"
