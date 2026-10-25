@@ -165,13 +165,14 @@ final class VMManager: @unchecked Sendable {
         let cArgs = args.map { strdup($0) }
         defer { cArgs.forEach { if let p = $0 { free(p) } } }
         var argv = cArgs + [nil]
+        let argc = argv.count
 
         let ret = qemuPath.withCString { pathPtr -> Int32 in
             withUnsafeMutablePointer(to: &pid) { pidPtr -> Int32 in
                 withUnsafeMutablePointer(to: &argv) { argvPtr -> Int32 in
                     argvPtr.withMemoryRebound(
                         to: UnsafeMutablePointer<CChar>?.self,
-                        capacity: argv.count
+                        capacity: argc
                     ) { basePtr in
                         posix_spawn(pidPtr, pathPtr, actions, nil, basePtr, environ)
                     }
