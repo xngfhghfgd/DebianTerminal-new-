@@ -14,23 +14,25 @@ struct AsyncLineSequence: AsyncSequence {
 
         mutating func next() async -> String? {
             do {
-                // 一次读一个字节（POC 简化；真实实现用缓冲读提升吞吐）
                 while true {
-                    let byte = try handle.availableData.first
-                    // availableData 会阻塞到读到 ≥1 字节；EOF 时返回 0 字节。
-                    if byte == nil {
+                    let data = try handle.availableData
+                    if data.isEmpty {
                         // EOF：把残存 buffer 作为最后一行返回（若非空）
                         if buffer.isEmpty { return nil }
                         let line = String(decoding: buffer, as: UTF8.self)
                         buffer.removeAll()
                         return line
                     }
-                    if byte == 0x0A { // \n
-                        let line = String(decoding: buffer, as: UTF8.self)
-                        buffer.removeAll()
-                        return line
+                    // 处理本块数据：按 \n 切行，残段留 buffer
+                    for byte in data {
+                        if byte == 0x0A {
+                            let line = String(decoding: buffer, as: UTF8.self)
+                            buffer.removeAll()
+                            return line
+                        }
+                        buffer.append(byte)
                     }
-                    buffer.append(byte)
+                    // 本块无换行，回到 while 继续读
                 }
             } catch {
                 // 读错误（如 pipe 关闭）：结束迭代
@@ -161,16 +163,19 @@ final class VMManager: @unchecked Sendable {
         var pid: pid_t = 0
         // 构造 argv：以 NUL 结尾的 C 字符串数组
         let cArgs = args.map { strdup($0) }
-        var argv = cArgs + [nil]
         defer { cArgs.forEach { if let p = $0 { free(p) } } }
+        var argv = cArgs + [nil]
 
-        let ret = withUnsafeMutablePointer(to: &pid) { pidPtr in
-            withUnsafeMutablePointer(to: &argv) { argvPtr in
-                argvPtr.withMemoryRebound(
-                    to: UnsafeMutablePointer<CChar>?.self,
-                    capacity: argv.count
-                ) { basePtr in
-                    posix_spawn(pidPtr, qemuPath, &spawn, nil, basePtr, environ)
+        // posix_spawn 的 path 需要 UnsafePointer<CChar>
+        let ret = qemuPath.withCString { pathPtr in
+            withUnsafeMutablePointer(to: &pid) { pidPtr in
+                withUnsafeMutablePointer(to: &argv) { argvPtr in
+                    argvPtr.withMemoryRebound(
+                        to: UnsafeMutablePointer<CChar>?.self,
+                        capacity: argv.count
+                    ) { basePtr in
+                        posix_spawn(pidPtr, pathPtr, &spawn, nil, basePtr, environ)
+                    }
                 }
             }
         }
