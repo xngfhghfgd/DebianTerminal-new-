@@ -41,9 +41,15 @@ jobs:
           KERNEL_VER="6.1.121"
           cd "$GITHUB_WORKSPACE"
           curl -sSL --retry 3 -o linux.tar.xz "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-${KERNEL_VER}.tar.xz"
+          # tarball 展开为 linux-6.1.121/；strip 顶层目录放入 linux/
+          rm -rf linux
           mkdir -p linux
           tar -xJf linux.tar.xz -C linux --strip-components=1
           rm -f linux.tar.xz
+          echo "### 校验内核源码完整性"
+          test -f linux/Makefile || { echo "ERROR: linux/Makefile 缺失"; ls -la linux; exit 1; }
+          test -f linux/arch/arm64/configs/virt_defconfig || { echo "ERROR: virt_defconfig 缺失"; ls linux/arch/arm64/configs 2>&1 | head; exit 1; }
+          echo "  OK: Makefile + virt_defconfig 存在"
           echo "### 编译 aarch64 virt 内核"
           KERNEL_SRC=linux OUT="$PWD/build/kernel" JOBS="$(nproc)" bash Kernel/build-kernel.sh
           echo "### Kernel 产物"
