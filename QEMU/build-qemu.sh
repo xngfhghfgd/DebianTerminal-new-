@@ -72,9 +72,7 @@ NINJA="$VENV/bin/ninja"
   -D libdir=lib \
   -D default_library=static \
   -D man=false \
-  -D tests=false \
-  -D valgrind=false \
-  -D python=false
+  -D tests=false
 "$NINJA" -C "$GLIB_OUT/build" -j"$(sysctl -n hw.ncpu)"
 "$NINJA" -C "$GLIB_OUT/build" install DESTDIR=""
 GLIB_PC_DIR="$GLIB_OUT/prefix/lib/pkgconfig"
