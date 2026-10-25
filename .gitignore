@@ -9,7 +9,7 @@ xcuserdata/
 *.xcscmblueprint
 
 # 大的二进制产物（内核 / Debian 镜像 / QEMU）不入库，CI 生成
-qemu/
+qemu-src/
 linux/
 debian-12-genericcloud-arm64.qcow2
 build/kernel/
