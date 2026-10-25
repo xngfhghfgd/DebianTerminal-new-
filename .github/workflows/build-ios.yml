@@ -48,10 +48,15 @@ jobs:
           rm -f linux.tar.xz
           echo "### 校验内核源码完整性"
           test -f linux/Makefile || { echo "ERROR: linux/Makefile 缺失"; ls -la linux; exit 1; }
-          test -f linux/arch/arm64/configs/virt_defconfig || { echo "ERROR: virt_defconfig 缺失"; ls linux/arch/arm64/configs 2>&1 | head; exit 1; }
-          echo "  OK: Makefile + virt_defconfig 存在"
-          echo "### 编译 aarch64 virt 内核"
-          KERNEL_SRC=linux OUT="$PWD/build/kernel" JOBS="$(nproc)" bash Kernel/build-kernel.sh
+          echo "  OK: Makefile 存在"
+          # arm64 virt_defconfig 不存在（stable tarball 只含 defconfig），用 defconfig 生成 CONFIG 再补 virt 关键项
+          echo "### 编译 aarch64 内核（defconfig + virt 关键项：pl011 / virtio / ext4 / dm-verity）"
+          KERNEL_SRC=linux OUT="$PWD/build/kernel" JOBS="$(nproc)" DEFCONFIG=defconfig \
+            EXTRA_KCONFIGS="CONFIG_SERIAL_AMBA_PL011=y CONFIG_SERIAL_AMBA_PL011_CONSOLE=y \
+              CONFIG_VIRTIO_MENU=y CONFIG_VIRTIO=y CONFIG_VIRTIO_PCI=y CONFIG_VIRTIO_MMIO=y \
+              CONFIG_EXT4_FS=y CONFIG_EXT4_FS_SECURITY=y CONFIG_TMPFS=y CONFIG_NFSD=m \
+              CONFIG_DEVTMPFS=y CONFIG_MTD=y CONFIG_MTD_BLOCK=y CONFIG_OVERLAY_FS=y" \
+            bash Kernel/build-kernel.sh
           echo "### Kernel 产物"
           ls -la "$PWD/build/kernel/Image"
           test -f "$PWD/build/kernel/Image"
