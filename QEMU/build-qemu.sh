@@ -20,15 +20,14 @@ CXX_BIN="$(xcrun --find clang++)"
 
 cd "$QEMU_SRC"
 
-# 选一个自带 distlib/tomli 的 Python 解释器：
-#  - macOS 系统 /usr/bin/python3（3.9，自带 tomli 兼容包）优先
-#  - 否则 brew 的 python@3.12
-if command -v /usr/bin/python3 >/dev/null 2>&1; then
-  PY=/usr/bin/python3
-else
-  PY="$(brew --prefix)/opt/python@3.12/bin/python3.12"
-fi
+# QEMU 构建需要 Python 3.9–3.12。macOS 15 runner 的 /usr/bin/python3 是 3.9.6（无 pip），
+# brew 的 python@3.12 有 pip 但需要预装 tomli（Python<3.11 缺 tomllib）。
+# 策略：brew 装 python@3.12，pip 装 tomli，--python 指向它。
+PY="$(brew --prefix)/opt/python@3.12/bin/python3.12"
 echo "### 使用 Python: $PY ($($PY --version 2>&1))"
+# 预装 tomli（Python 3.12 没有内置 tomllib 的可选回退需要它）+ distlib
+"$PY" -m ensurepip --upgrade 2>/dev/null || true
+"$PY" -m pip install --quiet tomli distlib
 export PYTHON="$PY"
 
 # 让 QEMU 使用已装好依赖的解释器（--python 指向它，避免重建隔离 venv）
