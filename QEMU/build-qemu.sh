@@ -277,7 +277,7 @@ cpu_family = 'aarch64'
 cpu = 'aarch64'
 endian = 'little'
 EOF
-echo "### meson 交叉文件已生成（pkg_config -> $PKG_WRAPPER）"
+echo "### meson cross file written: $CF (pkg_config -> $PKG_WRAPPER)"
 
 # ---------- Step 4: 手动 meson setup + ninja ----------
 echo "### 手动执行 meson setup"
