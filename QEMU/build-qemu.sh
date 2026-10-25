@@ -216,28 +216,42 @@ if grep -q "pthread_jit_write_protect_np" "$OSDEP" 2>/dev/null; then
   echo "### osdep.h 已修补：pthread_jit_write_protect_np -> noop (iOS)"
 fi
 
-# 修补 QEMU block/file-posix.c：fstatfs/struct statfs 是 glibc/Linux API，
-# 在 macOS/iOS（BSD）上不存在。用 f_statvfs（macOS/iOS 兼容）替换。
+# 修补 QEMU block/file-posix.c：__APPLE__ 块内用 fstatfs/struct statfs 设置磁盘
+# 传输大小提示，但 iOS SDK 上该 API 声明不完整（incomplete type / undeclared）。
+# 这段只是性能优化提示，非必需。保守做法：将整个 APPLE 块替换为 no-op。
 FP="$QEMU_SRC/block/file-posix.c"
 if grep -q "fstatfs" "$FP" 2>/dev/null; then
   python3 - "$FP" <<'PYFIX'
-import sys
+import sys, re
 path = sys.argv[1]
 src = open(path).read()
-if 'fstatfs' not in src:
-    print("WARN: fstatfs not found, skip")
-    sys.exit(0)
-# 替换 struct statfs buf; -> struct statvfs buf;
-src = src.replace('struct statfs buf;', 'struct statvfs buf;')
-# 替换 fstatfs 调用 -> f_statvfs，并调整字段名
-src = src.replace('if (!fstatfs(s->fd, &buf)) {', 'if (f_statvfs(s->fd, &buf) == 0) {')
-# statfs 的字段 f_blocks/f_bfree 与 statvfs 相同（POSIX），无需改动
-# 确保包含 statvfs（macOS 在 sys/mount.h，POSIX 在 sys/statvfs.h）
-if '#include <sys/statvfs.h>' not in src and 'f_statvfs' in src:
-    # macOS/iOS: f_statvfs 在 sys/mount.h；Linux 在 sys/statvfs.h
-    src = src.replace('#include <sys/stat.h>', '#include <sys/stat.h>\n#include <sys/mount.h>\n#include <sys/statvfs.h>', 1)
-open(path, 'w').write(src)
-print("### file-posix.c 已修补：fstatfs -> f_statvfs (iOS/macOS)")
+# 找到 "#if defined(__APPLE__) && (__MACH__)" 块并替换为 no-op
+pattern = re.compile(
+    r"#if defined\(__APPLE__\) && \(__MACH__\)\n"
+    r"    struct statfs buf;\n\n"
+    r"    if \(!fstatfs\(s->fd, &buf\)\) \{\n"
+    r"        bs->bl\.opt_transfer = buf\.f_iosize;\n"
+    r"        bs->bl\.pdiscard_alignment = buf\.f_bsize;\n"
+    r"    \}\n"
+    r"#endif"
+)
+new = ("#if defined(__APPLE__) && (__MACH__)\n"
+       "    /* iOS: fstatfs/statfs 在 iOS SDK 上声明不完整，跳过磁盘传输大小提示 */\n"
+       "    (void)s;\n"
+       "#endif")
+m = pattern.search(src)
+if m:
+    src = src[:m.start()] + new + src[m.end():]
+    open(path, 'w').write(src)
+    print("### file-posix.c 已修补：__APPLE__ fstatfs 块 -> no-op (iOS)")
+else:
+    # fallback: 直接注释掉两行 statfs 使用（若上面正则不匹配）
+    src = src.replace('struct statfs buf;', '/* iOS: no-op */')
+    src = src.replace('if (!fstatfs(s->fd, &buf)) {', 'if (0) { /* iOS: fstatfs unavailable */')
+    src = src.replace('bs->bl.opt_transfer = buf.f_iosize;', '')
+    src = src.replace('bs->bl.pdiscard_alignment = buf.f_bsize;', '')
+    open(path, 'w').write(src)
+    print("### file-posix.c 已修补(fallback)：fstatfs 行注释 (iOS)")
 PYFIX
 fi
 
