@@ -1,19 +1,75 @@
 import Foundation
+import Darwin
+
+/// 行式异步序列：从 `FileHandle` 逐字节读取并按换行切分成 `String`。
+///
+/// Foundation 的 `FileHandle` 没有内置的按行异步迭代器，故在此实现
+/// 一个最小的 `AsyncSequence`，供 `for await line in ...` 使用。
+struct AsyncLineSequence: AsyncSequence {
+    var fileHandle: FileHandle
+
+    struct LineIterator: AsyncIteratorProtocol {
+        var buffer: [UInt8] = []
+        let handle: FileHandle
+
+        mutating func next() async -> String? {
+            do {
+                // 一次读一个字节（POC 简化；真实实现用缓冲读提升吞吐）
+                while true {
+                    let byte = try handle.availableData.first
+                    // availableData 会阻塞到读到 ≥1 字节；EOF 时返回 0 字节。
+                    if byte == nil {
+                        // EOF：把残存 buffer 作为最后一行返回（若非空）
+                        if buffer.isEmpty { return nil }
+                        let line = String(decoding: buffer, as: UTF8.self)
+                        buffer.removeAll()
+                        return line
+                    }
+                    if byte == 0x0A { // \n
+                        let line = String(decoding: buffer, as: UTF8.self)
+                        buffer.removeAll()
+                        return line
+                    }
+                    buffer.append(byte)
+                }
+            } catch {
+                // 读错误（如 pipe 关闭）：结束迭代
+                if !buffer.isEmpty {
+                    let line = String(decoding: buffer, as: UTF8.self)
+                    buffer.removeAll()
+                    return line
+                }
+                return nil
+            }
+        }
+    }
+
+    func makeAsyncIterator() -> LineIterator {
+        LineIterator(handle: fileHandle)
+    }
+}
 
 /// 虚拟机生命周期管理：启动 / 停止 / 重启 / 强制停止 / 状态检测 / 资源释放。
 ///
 /// POC 说明：
-/// - QEMU 以独立进程方式由 App spawn（`posix_spawn`），串口 `std:chardev` 双向管道。
+/// - QEMU 以独立进程方式由 App spawn（`posix_spawn`），串口 `chardev` 双向管道。
 /// - 默认解释器（TCTI）模式保证无 JIT 也能跑；JIT 可用时 QEMU 自动切 TCG。
 /// - 本文件只管理一个 QEMU 实例，**避免重复启动**。
+/// - 运行行为（实际启动 QEMU / 读串口）属于阶段 B–F 实机验证；此处只保证
+///   构建可编译，且资源定位逻辑正确。
 final class VMManager: @unchecked Sendable {
     private var process: QEMUProcess?
     private let lock = NSLock()
 
     struct QEMUProcess {
         let pid: pid_t
+        /// 读 QEMU stdout 的读端（App 侧读端）。
         let outPipe: FileHandle
+        /// 写 QEMU stdin 的写端（App 侧写端）。
         let inPipe: FileHandle
+        /// QEMU 持有的对端 fd（防止泄漏；进程退出后可关闭）。
+        let outPipeOwner: Int32
+        let inPipeOwner: Int32
     }
 
     enum VMError: LocalizedError {
@@ -32,13 +88,12 @@ final class VMManager: @unchecked Sendable {
         }
     }
 
-    /// 启动虚拟机。返回（输出流 AsyncLineSequence，输入流）。
+    /// 启动虚拟机。返回（输出异步行序列，输入写端 `FileHandle`）。
     @discardableResult
-    func start(config: VMConfig) async throws -> (AsyncLineStream<String>, FileHandle) {
+    func start(config: VMConfig) async throws -> (AsyncLineSequence, FileHandle) {
         lock.lock()
         defer { lock.unlock() }
-        if let p = process {
-            _ = p
+        if process != nil {
             throw VMError.alreadyRunning
         }
 
@@ -58,40 +113,71 @@ final class VMManager: @unchecked Sendable {
             args.append(contentsOf: ["-machine", "virt,tcti=on"])
         }
 
-        // 双向 chardev 管道
-        let inPipe = try makePipe()
-        let outPipe = try makePipe()
+        // 双向 chardev 管道（保存对端 fd，防泄漏）
+        let (outRead, outWrite) = try makePipe()
+        let (inRead, inWrite) = try makePipe()
 
-        // posix_spawn QEMU
+        // posix_spawn QEMU：
+        //   QEMU stdout -> outWrite（QEMU 写端），App 读 outRead
+        //   QEMU stdin  <- inRead（QEMU 读端），App 写 inWrite
+        let pid = try spawnQEMU(qemuPath: qemuURL.path,
+                                 args: args,
+                                 stdoutFD: outWrite,
+                                 stdinFD: inRead)
+        // QEMU 已持有 outWrite/inRead 端，关闭 App 侧冗余引用
+        close(outWrite)
+        close(inRead)
+
+        let outPipe = FileHandle(fileDescriptor: outRead)
+        let inPipe = FileHandle(fileDescriptor: inWrite)
+
+        process = QEMUProcess(pid: pid,
+                              outPipe: outPipe,
+                              inPipe: inPipe,
+                              outPipeOwner: outRead,
+                              inPipeOwner: inWrite)
+
+        let outStream = AsyncLineSequence(fileHandle: outPipe)
+        return (outStream, inPipe)
+    }
+
+    /// 用 `posix_spawn` 启动 QEMU 进程。
+    /// - 参数：qemuPath（绝对路径）、args（含可执行文件在首元素）、
+    ///   stdoutFD（子进程 stdout 重定向的 fd）、stdinFD（子进程 stdin 重定向的 fd）。
+    /// - 返回子进程 pid；失败抛 `VMError.spawnFailed`。
+    private func spawnQEMU(qemuPath: String,
+                           args: [String],
+                           stdoutFD: Int32,
+                           stdinFD: Int32) throws -> pid_t {
         var spawn = posix_spawn_file_actions_t()
         posix_spawn_file_actions_init(&spawn)
-        posix_spawn_file_actions_addclose(&spawn, 0)
-        posix_spawn_file_actions_adddup2(&spawn, outPipe, 1) // stdout -> outPipe
-        posix_spawn_file_actions_adddup2(&spawn, inPipe, 0)  // inPipe -> stdin
+        // 关闭子进程 stderr（POC 简化，避免挂起）
+        posix_spawn_file_actions_addclose(&spawn, 2)
+        // stdout -> stdoutFD
+        posix_spawn_file_actions_adddup2(&spawn, stdoutFD, 1)
+        // stdin <- stdinFD
+        posix_spawn_file_actions_adddup2(&spawn, stdinFD, 0)
 
-        var env = [environ!]
         var pid: pid_t = 0
-        let cArgs = args.map { $0.withCString() } + [nil]
-        var argvBuf: [UnsafeMutablePointer<CChar>?] = cArgs.map { UnsafeMutablePointer(mutating: $0) }
-        let rc = withUnsafeMutablePointer(to: &pid) { pidPtr in
-            posix_spawn(
-                pidPtr, qemuURL.path, &spawn, nil,
-                argvBuf.withUnsafeMutableBufferPointer { buf in
-                    buf.baseAddress!
-                },
-                env.withUnsafeMutableBufferPointer { buf in
-                    buf.baseAddress!
+        // 构造 argv：以 NUL 结尾的 C 字符串数组
+        let cArgs = args.map { strdup($0) }
+        var argv = cArgs + [nil]
+        defer { cArgs.forEach { if let p = $0 { free(p) } } }
+
+        let ret = withUnsafeMutablePointer(to: &pid) { pidPtr in
+            withUnsafeMutablePointer(to: &argv) { argvPtr in
+                argvPtr.withMemoryRebound(
+                    to: UnsafeMutablePointer<CChar>?.self,
+                    capacity: argv.count
+                ) { basePtr in
+                    posix_spawn(pidPtr, qemuPath, &spawn, nil, basePtr, environ)
                 }
-            )
+            }
         }
         posix_spawn_file_actions_destroy(&spawn)
 
-        guard rc == 0 else { throw VMError.spawnFailed }
-
-        process = QEMUProcess(pid: pid, outPipe: outPipe, inPipe: inPipe)
-
-        let outStream = outPipe.lines
-        return (outStream, inPipe)
+        guard ret == 0 else { throw VMError.spawnFailed }
+        return pid
     }
 
     func stop() async {
@@ -102,6 +188,8 @@ final class VMManager: @unchecked Sendable {
         guard let p = p else { return }
         kill(p.pid, SIGTERM)
         waitpid(p.pid, nil, 0)
+        close(p.outPipeOwner)
+        close(p.inPipeOwner)
     }
 
     func forceStop() async {
@@ -112,6 +200,8 @@ final class VMManager: @unchecked Sendable {
         guard let p = p else { return }
         kill(p.pid, SIGKILL)
         waitpid(p.pid, nil, 0)
+        close(p.outPipeOwner)
+        close(p.inPipeOwner)
     }
 
     func isRunning() -> Bool {
@@ -151,9 +241,10 @@ final class VMManager: @unchecked Sendable {
         return a
     }
 
-    private func makePipe() throws -> FileHandle {
-        var fds: [int32] = [0, 0]
+    /// 创建 pipe，返回 (读端 fd, 写端 fd)。
+    private func makePipe() throws -> (Int32, Int32) {
+        var fds: [Int32] = [0, 0]
         guard pipe(&fds) == 0 else { throw VMError.ioError("pipe() 失败") }
-        return FileHandle(fileDescriptor: fds[1])
+        return (fds[0], fds[1])
     }
 }
