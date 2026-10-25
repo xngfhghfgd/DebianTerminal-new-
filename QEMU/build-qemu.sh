@@ -205,6 +205,17 @@ cd "$QEMU_SRC"
 # ---------- Step 2: QEMU configure（skip-meson，只生成 host 配置） ----------
 echo "### 使用 Python: $PY ($($PY --version 2>&1))"
 
+# 修补 QEMU osdep.h：iOS 上 pthread_jit_write_protect_np 不可用，
+# 该 API 只在启用 JIT 时有意义；本构建 TCG+TCTI 解释器不需要 JIT。
+# 用 sed 将两处调用替换为空操作（保守、不碰逻辑）。
+OSDEP="$QEMU_SRC/include/qemu/osdep.h"
+if grep -q "pthread_jit_write_protect_np" "$OSDEP" 2>/dev/null; then
+  # 将 pthread_jit_write_protect_np(true) 和 (false) 替换为空语句
+  sed -i.bak 's/^[[:space:]]*pthread_jit_write_protect_np(true);/    \/\/ no-op on iOS (JIT write protect unavailable)/' "$OSDEP"
+  sed -i.bak 's/^[[:space:]]*pthread_jit_write_protect_np(false);/    \/\/ no-op on iOS (JIT write protect unavailable)/' "$OSDEP"
+  echo "### osdep.h 已修补：pthread_jit_write_protect_np -> noop (iOS)"
+fi
+
 QEMU_CONFIGURE_ARGS=(
   --python="$PYTHON"
   --skip-meson
