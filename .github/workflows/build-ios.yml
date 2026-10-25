@@ -46,19 +46,23 @@ jobs:
           # QEMU configure 需要 Python 3.9–3.12；macOS 15 runner 默认 3.14 缺 distlib，
           # 显式指定 3.12 避免 "found no usable distlib" 报错。
           brew install python@3.12 2>/dev/null || true
+          # brew 的 python@3.12 venv 缺 distlib，显式安装供 QEMU 创建 venv 使用
+          "$(brew --prefix)/opt/python@3.12/bin/python3.12" -m pip install distlib 2>/dev/null || true
           echo "deps ready"
 
       - name: build QEMU (iOS arm64, TCG + TCTI)
         run: |
           set -e
           # 强制用 python@3.12（避免 3.14 缺 distlib）
-          export PATH="$(brew --prefix)/opt/python@3.12/bin:$PATH"
+          P312="$(brew --prefix)/opt/python@3.12/bin/python3.12"
+          command -v "$P312" >/dev/null 2>&1 || P312="$(command -v python3.12 || true)"
+          echo "python for QEMU: $P312"
           echo "### 拉取 QEMU 源码（固定版本，见 QEMU/VERSIONS.txt）"
           QEMU_VERSION="v9.2.0"   # 基线；如需 UTM 同源 10.x 可改
           rm -rf qemu-src
           git clone --depth 1 --branch "$QEMU_VERSION" https://github.com/qemu/qemu.git qemu-src
           echo "### 交叉编译 QEMU 到 iOS arm64"
-          OUT="$PWD/build/qemu-ios" QEMU_SRC="$PWD/qemu-src" bash QEMU/build-qemu.sh
+          OUT="$PWD/build/qemu-ios" QEMU_SRC="$PWD/qemu-src" PYTHON="$P312" bash QEMU/build-qemu.sh
           echo "### QEMU 产物"
           ls -la "$PWD/build/qemu-ios/bin" 2>/dev/null || echo "  (静态库模式，见 build 日志)"
           # 成功标志
