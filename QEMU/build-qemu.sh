@@ -157,6 +157,8 @@ cpu = 'aarch64'
 endian = 'little'
 GLEOF
 
+# 切到 glib 源码目录再 meson setup（source dir = 当前目录）
+cd "$GLIB_SRC"
 "$MESON" setup "$GLIB_OUT/build" \
   --cross-file "$GLIB_OUT/meson-ios-cross.txt" \
   -D prefix="$GLIB_OUT/prefix" \
