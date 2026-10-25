@@ -170,7 +170,13 @@ PKG_CONFIG_PATH="$GLIB_PC_DIR" "$NINJA" -C . -j"$(sysctl -n hw.ncpu)"
 
 echo "### 安装产物到 $OUT"
 mkdir -p "$OUT"
-PKG_CONFIG_PATH="$GLIB_PC_DIR" "$NINJA" -C . install DESTDIR="" || true
+# meson 的 install 目标通过 ninja 直接执行；DESTDIR 作为环境变量传递
+PKG_CONFIG_PATH="$GLIB_PC_DIR" DESTDIR="$OUT" "$NINJA" -C . install || true
+# 兜底：若 install 没把产物放到 OUT，直接收集 build 目录里的可执行文件
+if [[ ! -d "$OUT/bin" && ! -d "$OUT/lib" ]]; then
+  echo "  install 未生成 $OUT 子目录，从 build 目录收集"
+  find . -name "qemu-system-aarch64" -type f 2>/dev/null | head
+fi
 
 echo "QEMU iOS 构建完成"
 ls -la "$OUT"/bin 2>/dev/null || echo "  (产物路径见 build 日志)"
