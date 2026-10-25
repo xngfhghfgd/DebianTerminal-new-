@@ -296,7 +296,7 @@ if [[ -f "$QEMU_BIN" ]]; then
   echo "QEMU 可执行文件已复制到: $OUT/bin/qemu-system-aarch64-ios"
   file "$OUT/bin/qemu-system-aarch64-ios" 2>/dev/null || true
 else
-  echo "WARNING: 未找到 $QEMU_BIN，列出 build 目录产物"
+  echo "WARNING: qemu-system-aarch64 not found at $QEMU_BIN - listing build dir"
   find "$BUILD_DIR" -name "qemu-system-*" -type f 2>/dev/null | head
 fi
 
