@@ -151,15 +151,11 @@ final class VMManager: @unchecked Sendable {
                            args: [String],
                            stdoutFD: Int32,
                            stdinFD: Int32) throws -> pid_t {
-        // posix_spawn_file_actions_t 在 iOS 以不透明 struct 导入；
-        // 直接分配 UnsafeMutablePointer 并 init。
-        guard let actions = UnsafeMutablePointer<posix_spawn_file_actions_t?>.allocate(capacity: 1) else {
-            throw VMError.ioError("posix_spawn_file_actions_t 分配失败")
-        }
-        defer {
-            posix_spawn_file_actions_destroy(actions)
-            actions.deallocate()
-        }
+        // posix_spawn_file_actions_t 在 iOS 以不透明 struct（≈ UnsafeMutableRawPointer）导入。
+        // 分配原始内存并用 assumingMemoryBound 桥接为 C API 期望的 optional 指针。
+        let mem = UnsafeMutableRawPointer.allocate(byteCount: 32, alignment: 8)
+        defer { mem.deallocate() }
+        let actions = mem.assumingMemoryBound(to: posix_spawn_file_actions_t?.self)
         posix_spawn_file_actions_init(actions)
         posix_spawn_file_actions_addclose(actions, 2)
         posix_spawn_file_actions_adddup2(actions, stdoutFD, 1)
