@@ -29,8 +29,8 @@ else
   PY="$(command -v python3)"
 fi
 echo "### 使用系统 Python: $PY ($($PY --version 2>&1))"
-# 预装 distlib / virtualenv（系统 Python 可能需要 apt 风格补装；失败则继续）
-"$PY" -m pip install --quiet distlib virtualenv 2>/dev/null || \
+# QEMU configure 需要这些 Python 包（系统 Python 缺则装）
+"$PY" -m pip install --quiet distlib virtualenv tomli tomllib pyyaml 2>/dev/null || \
   "$PY" -m ensurepip --upgrade 2>/dev/null || true
 export PYTHON="$PY"
 
