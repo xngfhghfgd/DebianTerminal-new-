@@ -104,7 +104,8 @@ jobs:
           echo "### 组装 App 资源（QEMU 二进制/内核/BIOS 放进 bundle）"
           RES=DebianTerminal/Resources
           mkdir -p "$RES"
-          cp -f "$PWD/build/qemu-ios/bin/qemu-system-aarch64" "$RES/" 2>/dev/null || \
+          # QEMU 产物统一为 build/qemu-ios/bin/qemu-system-aarch64-ios（build-qemu.sh 生成）
+          cp -f "$PWD/build/qemu-ios/bin/qemu-system-aarch64-ios" "$RES/qemu-system-aarch64" 2>/dev/null || \
             echo "  QEMU 静态库模式：产物为 .a，链接进 App"
           cp -f "$PWD/build/kernel/Image" "$RES/Image" 2>/dev/null || true
           cp -f "$PWD/build/debian12.img" "$RES/debian12.img" 2>/dev/null || true
