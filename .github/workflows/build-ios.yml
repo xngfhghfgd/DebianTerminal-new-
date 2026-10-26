@@ -214,15 +214,22 @@ jobs:
       - name: emit status report
         run: |
           set -e
+          RES="$PWD/build/derived/Build/Products/Release-iphoneos/DebianTerminal.app/Resources"
+          qemu_ok="❌"; kern_ok="❌"; ipa_ok="❌"
+          [[ -f "$RES/qemu-system-aarch64" ]] && qemu_ok="✅"
+          [[ -f "$RES/Image" ]] && kern_ok="✅"
+          [[ -f "$PWD/build/DebianTerminal-unsigned.ipa" ]] && ipa_ok="✅"
           {
             echo "## 构建状态报告（诚实分层，见 docs/SIGNING.md）"
             echo "- App 编译成功：✅（未签名）"
             echo "- QEMU 编译成功：✅（iOS arm64, TCG + TCTI）"
-            echo "- IPA 生成：✅（未签名）"
-            echo "- IPA 签名：❌（需 SideStore/AltStore 本地完成，见 docs/SIGNING.md）"
-            echo "- 是否可直接安装：❌ 未签名；需本地签名"
-            echo "- 实机验证（A–F）：❌ 需目标 iPad，见 docs/POC.md"
-          } >> status-report.md
+            echo "- QEMU 二进制已装入 App bundle Resources/：$qemu_ok"
+            echo "- aarch64 内核（Image）已装入 bundle：$kern_ok"
+            echo "- Debian12 磁盘镜像：❌（离线 CI 未生成；需联网生成或手动放入 Resources/debian12.img）"
+            echo "- 未签名 IPA 生成：$ipa_ok（需 SideStore/AltStore 本地签名后安装，见 docs/SIGNING.md）"
+            echo "- 实机验证（QEMU 启动 + 进入 bash）：❌ 需目标 iPad，见 docs/POC.md"
+          } > status-report.md
+          cat status-report.md
 
       - name: upload status report
         uses: actions/upload-artifact@v4
