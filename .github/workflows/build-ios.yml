@@ -157,6 +157,10 @@ jobs:
           brew install xcodegen 2>/dev/null || true
           # xcodegen 默认找 project.yml；本仓库用 xcodegen.yml，需 --spec 显式指定
           command -v xcodegen >/dev/null 2>&1 && xcodegen generate --spec xcodegen.yml
+          echo "### 资源组装自检（诚实记录哪些资源实际进了 bundle）"
+          for f in "$RES/qemu-system-aarch64" "$RES/Image" "$RES/debian12.img"; do
+            [[ -f "$f" ]] && echo "  IN-BUNDLE: $f" || echo "  MISSING:  $f"
+          done
           xcodebuild \
             -project DebianTerminal.xcodeproj \
             -scheme DebianTerminal \
