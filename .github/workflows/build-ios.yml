@@ -68,14 +68,17 @@ jobs:
           RAW_BASE=debian-12-genericcloud-arm64.qcow2 OUT="$PWD/build/debian12.img" SIZE_MB=4096 \
             bash Scripts/prepare-debian.sh || echo "  (离线/无 qcow2，debian12.img 未生成)"
           ls -la "$PWD/build/debian12.img" 2>/dev/null || echo "  debian12.img 未生成，CI 继续"
+          # 统一 artifact 目录布局：guest-assets/{Image,debian12.img}
+          mkdir -p "$PWD/build/guest-assets"
+          cp -f "$PWD/build/kernel/Image" "$PWD/build/guest-assets/Image"
+          [[ -f "$PWD/build/debian12.img" ]] && cp -f "$PWD/build/debian12.img" "$PWD/build/guest-assets/debian12.img" || true
 
       - name: upload kernel + debian
         uses: actions/upload-artifact@v4
         with:
           name: guest-assets
           path: |
-            build/kernel/Image
-            build/debian12.img
+            build/guest-assets/
           if-no-files-found: warn
 
   # ---------- Job 2: QEMU iOS 交叉编译 + 未签名 IPA（macos runner） ----------
