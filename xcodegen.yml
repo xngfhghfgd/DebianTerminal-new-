@@ -13,7 +13,14 @@ targets:
     platform: iOS
     deploymentTarget: "17.0"
     sources:
-      - path: DebianTerminal
+      - path: DebianTerminal/UI
+        type: group
+      - path: DebianTerminal/App
+        type: group
+      - path: DebianTerminal/VM
+        type: group
+      - path: DebianTerminal/Resources
+        type: folder
     info:
       path: DebianTerminal/Info.plist
       properties:
