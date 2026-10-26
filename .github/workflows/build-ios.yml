@@ -146,12 +146,19 @@ jobs:
           echo "### 组装 App 资源（QEMU 二进制/内核/BIOS 放进 bundle）"
           RES=DebianTerminal/Resources
           mkdir -p "$RES"
-          # QEMU 产物统一为 build/qemu-ios/bin/qemu-system-aarch64-ios（build-qemu.sh 生成）
+          # 把资源放进 Swift 工程会引用的目录（xcodegen sources 仅含 src/，
+          # 只有 src/ 下的资源才会进入 .app 的 bundle）。
           cp -f "$PWD/build/qemu-ios/bin/qemu-system-aarch64-ios" "$RES/qemu-system-aarch64" 2>/dev/null || \
             echo "  QEMU 静态库模式：产物为 .a，链接进 App"
           # 内核与 Debian 镜像来自 kernel-debian job（download-artifact 到 build/guest-assets/）
           cp -f "$PWD/build/guest-assets/Image" "$RES/Image" 2>/dev/null || echo "  Image 未随附（kernel-debian job 未产出）"
           cp -f "$PWD/build/guest-assets/debian12.img" "$RES/debian12.img" 2>/dev/null || echo "  debian12.img 未随附"
+          # 同步到 src/DebianTerminal/Resources（xcodegen 会把这些打进 bundle）
+          SRCRES=DebianTerminal/src/DebianTerminal/Resources
+          mkdir -p "$SRCRES"
+          for f in qemu-system-aarch64 Image debian12.img; do
+            [[ -f "$RES/$f" ]] && cp -f "$RES/$f" "$SRCRES/$f" && echo "  -> bundle: $f"
+          done
 
           echo "### xcodebuild 编译（未签名）"
           brew install xcodegen 2>/dev/null || true
