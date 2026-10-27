@@ -4,14 +4,22 @@
 
 ## 当前状态
 
+> 构建层（A/B + 内核/磁盘镜像随附）已由 GitHub Actions 全绿验证；C–F 需真机 iPad 实测。
+
 | 状态 | 描述 | 标记 | 证据 |
 |---|---|---|---|
-| A | QEMU 已编译（iOS arm64） | ⏳ 待 CI | 见 Actions build 日志 |
-| B | QEMU 已打包进 App | ⏳ 待 CI | 产物清单 |
-| C | QEMU 已在 iPad 上运行 | ❌ 未开始 | 需实机 |
+| A | QEMU 已编译（iOS arm64, TCG+TCTI） | ✅ CI 通过 | build job「build QEMU」success（Actions 日志） |
+| B | QEMU 已打包进 App bundle | ✅ CI 通过 | `.app/Resources/qemu-system-aarch64`（Mach-O arm64，~37 MB） |
+| B' | aarch64 内核 `Image` 已装入 bundle | ✅ CI 通过 | `.app/Resources/Image`（ubuntu-latest job 编译） |
+| B'' | Debian 12 `debian12.img` 已装入 bundle | ✅ CI 通过 | genericcloud qcow2→raw（4 GB，`prepare-debian.sh` 自动下载） |
+| C | QEMU 已在 iPad 上运行 | ❌ 未开始 | 需真机 + 签名 |
 | D | Linux Kernel 已启动 | ❌ 未开始 | 需实机 |
 | E | Debian 12 已启动 | ❌ 未开始 | 需实机 |
 | F | Debian 命令行可交互 | ❌ 未开始 | 需实机 |
+
+**未签名 IPA 已生成**（未做签名，需 SideStore/AltStore 本地签后装 iPad，见 SIGNING.md）。
+**JIT 未启用**：TCG 模式跑 Linux 内核可能极慢或不稳定，需实机确认（见 JIT.md）。
+**Debian genericcloud 首启**：默认 `cloud-user`/`Debian12`，建议首启改强口令并 `systemctl set-default multi-user.target`（见 bundle 内 `prepare-notes.txt`）。
 
 ## 验证命令（实机阶段，逐级执行）
 
