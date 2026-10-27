@@ -215,18 +215,17 @@ jobs:
         run: |
           set -e
           RES="$PWD/build/derived/Build/Products/Release-iphoneos/DebianTerminal.app/Resources"
-          qemu_ok="❌"; kern_ok="❌"; ipa_ok="❌"
-          [[ -f "$RES/qemu-system-aarch64" ]] && qemu_ok="✅"
-          [[ -f "$RES/Image" ]] && kern_ok="✅"
-          [[ -f "$PWD/build/DebianTerminal-unsigned.ipa" ]] && ipa_ok="✅"
+          res_lines="(未找到 Resources/，资源未装入 .app)"
+          if [[ -d "$RES" ]]; then
+            res_lines="$(ls -l "$RES" | awk 'NR>1 {printf "  - %s (%s bytes)\n", $NF, $5}')"
+          fi
           {
             echo "## 构建状态报告（诚实分层，见 docs/SIGNING.md）"
             echo "- App 编译成功：✅（未签名）"
             echo "- QEMU 编译成功：✅（iOS arm64, TCG + TCTI）"
-            echo "- QEMU 二进制已装入 App bundle Resources/：$qemu_ok"
-            echo "- aarch64 内核（Image）已装入 bundle：$kern_ok"
-            echo "- Debian12 磁盘镜像：❌（离线 CI 未生成；需联网生成或手动放入 Resources/debian12.img）"
-            echo "- 未签名 IPA 生成：$ipa_ok（需 SideStore/AltStore 本地签名后安装，见 docs/SIGNING.md）"
+            echo "- .app bundle Resources/ 实际内容："
+            echo "$res_lines"
+            echo "- 未签名 IPA 生成：$( [[ -f "$PWD/build/DebianTerminal-unsigned.ipa" ]] && echo "✅" || echo "❌")（需 SideStore/AltStore 本地签名后安装，见 docs/SIGNING.md）"
             echo "- 实机验证（QEMU 启动 + 进入 bash）：❌ 需目标 iPad，见 docs/POC.md"
           } > status-report.md
           cat status-report.md
