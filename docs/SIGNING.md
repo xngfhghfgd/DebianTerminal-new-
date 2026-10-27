@@ -35,3 +35,13 @@
 
 - 不得将 Apple 账号密码、证书私钥、Provisioning Profile 提交到公开仓库或写入脚本明文。
 - 如需用户提供签名材料，必须先完成代码编译与 POC。
+
+
+## 当前构建产物（GitHub Actions，run 40344488462 起）
+
+- 工件 `DebianTerminal-builds` 内含：
+  - `DebianTerminal-unsigned.ipa`（未签名）
+  - `derived/.../DebianTerminal.app/Resources/{qemu-system-aarch64, Image, debian12.img}`
+- `debian12.img` 为 Debian 12 bookworm genericcloud arm64（qcow2→raw，4 GB 稀疏，占 ~977 MB）。
+- 下载工件后可直接拖给 SideStore/AltStore 签名；**未签名 IPA 不能直接 `xcrun devicectl` 安装**。
+- 签名材料（证书/Profile）不得提交到公开仓库；如需自动签名走付费 Apple Developer + Secrets。
