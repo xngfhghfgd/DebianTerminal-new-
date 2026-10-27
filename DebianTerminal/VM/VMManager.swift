@@ -237,7 +237,24 @@ final class VMManager: @unchecked Sendable {
         // 相对资源名映射到 Bundle / Documents
         if a.hasPrefix("Documents/") {
             let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            return docs.appendingPathComponent(String(a.dropFirst("Documents/".count))).path
+            let sub = String(a.dropFirst("Documents/".count))
+            let target = docs.appendingPathComponent(sub)
+            // 磁盘镜像可能随附在 App bundle Resources（slim 模式下从 bundle 释放到 Documents）
+            if !FileManager.default.fileExists(atPath: target.path),
+               let inBundle = Bundle.main.url(forResource: sub, withExtension: nil),
+               (inBundle.path.hasSuffix(".img") || inBundle.path.hasSuffix(".qcow2")) {
+                try? FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+                do {
+                    if FileManager.default.fileExists(atPath: target.path) {
+                        try FileManager.default.removeItem(at: target)
+                    }
+                    try FileManager.default.copyItem(at: inBundle, to: target)
+                    return target.path
+                } catch {
+                    // 复制失败则回退到 Documents 原路径（可能缺失，QEMU 启动会报 IO 错误）
+                }
+            }
+            return target.path
         }
         if Bundle.main.url(forResource: a, withExtension: nil) != nil {
             return Bundle.main.url(forResource: a, withExtension: nil)!.path
