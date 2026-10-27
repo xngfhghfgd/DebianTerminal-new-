@@ -182,6 +182,18 @@ jobs:
           ls -la "$APP"
           test -d "$APP"
 
+
+           # 同时生成 slim 版 IPA（去掉 4GB 磁盘镜像，只留 QEMU+内核+App 壳，~75MB）
+           # 磁盘镜像单独作为 debian12-disk 工件发布，装机后用 Files 拷入 App 沙盒 Documents/Debian/
+           echo "### 生成 slim IPA（无磁盘镜像）"
+           rm -rf "$PWD/build/DebianTerminal-slim.app" "$PWD/build/DebianTerminal-slim.ipa"
+           cp -R "$APP" "$PWD/build/DebianTerminal-slim.app"
+           rm -f "$PWD/build/DebianTerminal-slim.app/Resources/debian12.img"
+           SLIPDIR="$PWD/build/DebianTerminal-slim.ipa.dir"
+           rm -rf "$SLIPDIR"; mkdir -p "$SLIPDIR/Payload"
+           cp -R "$PWD/build/DebianTerminal-slim.app" "$SLIPDIR/Payload/"
+           zip -qry "$PWD/build/DebianTerminal-slim-unsigned.ipa" "$SLIPDIR"
+           echo "slim IPA 大小: $(du -h "$PWD/build/DebianTerminal-slim-unsigned.ipa" | awk '{print $1}')"
       - name: run tests
         run: |
           set -e
@@ -209,6 +221,24 @@ jobs:
           path: |
             build/DebianTerminal-unsigned.ipa
             build/derived/Build/Products/Release-iphoneos/DebianTerminal.app
+          if-no-files-found: warn
+
+      - name: upload slim artifact
+        if: hash_files('build/DebianTerminal-slim-unsigned.ipa') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: DebianTerminal-slim
+          path: |
+            build/DebianTerminal-slim-unsigned.ipa
+          if-no-files-found: warn
+
+      - name: upload disk image artifact
+        if: hash_files('build/guest-assets/debian12.img') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: debian12-disk
+          path: |
+            build/guest-assets/debian12.img
           if-no-files-found: warn
 
       - name: emit status report
