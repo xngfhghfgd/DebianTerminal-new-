@@ -224,21 +224,17 @@ jobs:
           if-no-files-found: warn
 
       - name: upload slim artifact
-        if: hash_files('build/DebianTerminal-slim-unsigned.ipa') != ''
         uses: actions/upload-artifact@v4
         with:
           name: DebianTerminal-slim
-          path: |
-            build/DebianTerminal-slim-unsigned.ipa
+          path: build/DebianTerminal-slim-unsigned.ipa
           if-no-files-found: warn
 
       - name: upload disk image artifact
-        if: hash_files('build/guest-assets/debian12.img') != ''
         uses: actions/upload-artifact@v4
         with:
           name: debian12-disk
-          path: |
-            build/guest-assets/debian12.img
+          path: build/guest-assets/debian12.img
           if-no-files-found: warn
 
       - name: emit status report
